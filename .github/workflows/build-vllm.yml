@@ -21,7 +21,14 @@ jobs:
       - name: Select commits
         id: select
         run: |
-          COMMITS=$(jq -r 'select(.Dockerfile != null) | .commit' nvidia-vllm-docker.jsonl | head -n "${{ github.event.inputs.batch_size }}")
+          mapfile -t BLACKLIST < <(grep -Eo '^[a-f0-9]+' blacklist.txt 2>/dev/null || true)
+          BLACKLIST_RE=$(printf '|%s' "${BLACKLIST[@]}" | cut -c2- || true)
+          if [ -n "$BLACKLIST_RE" ]; then
+            FILTER="select(.Dockerfile != null and (.commit | test(\"^(${BLACKLIST_RE})$\") | not)) | .commit"
+          else
+            FILTER="select(.Dockerfile != null) | .commit"
+          fi
+          COMMITS=$(jq -r "$FILTER" nvidia-vllm-docker.jsonl | head -n "${{ github.event.inputs.batch_size }}")
           JSON=$(printf '%s\n' "$COMMITS" | jq -R -s -c 'split("\n") | map(select(length>0))')
           echo "commits=$JSON" >> "$GITHUB_OUTPUT"
 
