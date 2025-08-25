@@ -48,6 +48,18 @@ jobs:
           remove-haskell: true
           remove-codeql: true
           overprovision-lvm: true
+      - name: Aggressive cleanup for free space
+        run: |
+          set -euxo pipefail
+          echo "Before cleanup:"; df -h /
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /opt/hostedtoolcache || true
+          docker system prune -af || true
+          docker builder prune -af || true
+          echo "After cleanup:"; df -h /
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
