@@ -11,6 +11,7 @@ on:
 jobs:
   prepare:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     outputs:
       commits: ${{ steps.select.outputs.commits }}
     steps:
@@ -27,6 +28,7 @@ jobs:
   build:
     needs: prepare
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     strategy:
       max-parallel: 1
       fail-fast: false
