@@ -7,6 +7,10 @@ on:
         description: "How many commits per run"
         required: true
         default: "10"
+      max_parallel:
+        description: "How many concurrent builds"
+        required: true
+        default: "1"
 
 jobs:
   prepare:
@@ -37,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
-      max-parallel: 1
+      max-parallel: ${{ github.event.inputs.max_parallel }}
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.prepare.outputs.commits) }}
