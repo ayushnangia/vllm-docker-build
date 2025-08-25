@@ -9,58 +9,62 @@ on:
         default: "10"
 
 jobs:
-  build:
+  prepare:
     runs-on: ubuntu-latest
+    outputs:
+      commits: ${{ steps.select.outputs.commits }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update -y && sudo apt-get install -y jq
+      - name: Select commits
+        id: select
+        run: |
+          COMMITS=$(jq -r 'select(.Dockerfile != null) | .commit' nvidia-vllm-docker.jsonl | head -n "${{ github.event.inputs.batch_size }}")
+          JSON=$(printf '%s\n' "$COMMITS" | jq -R -s -c 'split("\n") | map(select(length>0))')
+          echo "commits=$JSON" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: false
+      matrix:
+        commit: ${{ fromJSON(needs.prepare.outputs.commits) }}
     env:
       IMAGE_NAME: nvidia-vllm-docker
     steps:
       - uses: actions/checkout@v4
-
-      - name: Read commit list and limit to batch_size
-        run: |
-          # Extract commits with non-null Dockerfile from JSONL
-          jq -r 'select(.Dockerfile != null) | .commit' nvidia-vllm-docker.jsonl > commits.txt
-          head -n "${{ github.event.inputs.batch_size }}" commits.txt > commits_batch.txt
-          echo "Batch:"; cat commits_batch.txt
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           install: true
-
       - name: Login to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Install git and jq
         run: sudo apt-get update -y && sudo apt-get install -y git jq
-
       - name: Clone vLLM
         run: |
           if [ ! -d vllm ]; then git clone https://github.com/vllm-project/vllm.git; fi
-
-      - name: Build and push batch
+      - name: Build and push
         run: |
           set -e
-          CACHE_FROM=type=gha
-          CACHE_TO=type=gha,mode=max
-          while read COMMIT; do
-            echo "==> $COMMIT"
-            git -C vllm fetch --all --tags --prune
-            if ! git -C vllm checkout -q "$COMMIT"; then echo "skip $COMMIT (checkout failed)"; continue; fi
-            DF=vllm/docker/Dockerfile
-            [ -f "$DF" ] || DF=vllm/Dockerfile
-            if [ ! -f "$DF" ]; then echo "skip $COMMIT (no Dockerfile)"; continue; fi
-            docker buildx build \
-              --platform linux/amd64 \
-              --file "$DF" \
-              --tag "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$COMMIT" \
-              --label "org.opencontainers.image.revision=$COMMIT" \
-              --cache-from $CACHE_FROM \
-              --cache-to $CACHE_TO \
-              --push \
-              vllm
-            sleep 5
-          done < commits_batch.txt
+          COMMIT="${{ matrix.commit }}"
+          echo "==> $COMMIT"
+          git -C vllm fetch --all --tags --prune
+          if ! git -C vllm checkout -q "$COMMIT"; then echo "skip $COMMIT (checkout failed)"; exit 0; fi
+          DF=vllm/docker/Dockerfile; [ -f "$DF" ] || DF=vllm/Dockerfile
+          if [ ! -f "$DF" ]; then echo "skip $COMMIT (no Dockerfile)"; exit 0; fi
+          docker buildx build \
+            --platform linux/amd64 \
+            --file "$DF" \
+            --tag "docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:$COMMIT" \
+            --label "org.opencontainers.image.revision=$COMMIT" \
+            --cache-from type=gha \
+            --cache-to type=gha,mode=max \
+            --push \
+            vllm
