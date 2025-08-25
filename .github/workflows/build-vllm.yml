@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
-      max-parallel: ${{ github.event.inputs.max_parallel }}
+      max-parallel: ${{ fromJSON(inputs.max_parallel) }}
       fail-fast: false
       matrix:
         commit: ${{ fromJSON(needs.prepare.outputs.commits) }}
