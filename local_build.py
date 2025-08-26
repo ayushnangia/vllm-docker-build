@@ -34,6 +34,27 @@ import textwrap
 from pathlib import Path
 from typing import Iterable, List, Optional, Set, Tuple
 
+try:
+    # Optional pretty progress bars; falls back silently if not installed
+    from tqdm import tqdm as _tqdm
+
+    def _progress(total: int, desc: str):
+        return _tqdm(total=total, desc=desc)
+
+except Exception:  # pragma: no cover
+    def _progress(total: int, desc: str):  # type: ignore
+        class _Dummy:
+            def update(self, n: int):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        return _Dummy()
+
 
 DEFAULT_IMAGE_NAME = "nvidia-vllm-docker"
 DEFAULT_REPO_URL = "https://github.com/vllm-project/vllm.git"
@@ -179,6 +200,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--skip-pushed", action="store_true", help="Skip commits whose tags already exist")
     parser.add_argument("--no-push", action="store_true", help="Build without pushing")
     parser.add_argument("--platform", default="linux/amd64", help="Build platform (default: %(default)s)")
+    parser.add_argument(
+        "--cache-dir",
+        default=".buildx-cache",
+        help="Directory for local Buildx cache (shared layers across builds)",
+    )
     return parser.parse_args(argv)
 
 
@@ -212,8 +238,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"Building {len(to_build)} commits (parallel={args.max_parallel})...")
 
     results: List[Tuple[str, bool, str]] = []
-    cache_from = None
-    cache_to = None
+    # Enable local directory cache for shared layers across builds
+    cache_dir = Path(args.cache_dir)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_from = f"type=local,src={cache_dir}"
+    cache_to = f"type=local,dest={cache_dir},mode=max"
 
     def _worker(commit: str) -> Tuple[str, bool, str]:
         return build_one_commit(
@@ -228,17 +257,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
 
     if args.max_parallel <= 1:
-        for commit in to_build:
-            res = _worker(commit)
-            results.append(res)
-            print(f"{res[0]} => {'OK' if res[1] else 'FAIL'}")
+        with _progress(total=len(to_build), desc="Building") as pbar:
+            for commit in to_build:
+                res = _worker(commit)
+                results.append(res)
+                pbar.update(1)
+                print(f"{res[0]} => {'OK' if res[1] else 'FAIL'}")
     else:
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_parallel) as ex:
             future_to_commit = {ex.submit(_worker, c): c for c in to_build}
-            for fut in concurrent.futures.as_completed(future_to_commit):
-                res = fut.result()
-                results.append(res)
-                print(f"{res[0]} => {'OK' if res[1] else 'FAIL'}")
+            with _progress(total=len(to_build), desc="Building") as pbar:
+                for fut in concurrent.futures.as_completed(future_to_commit):
+                    res = fut.result()
+                    results.append(res)
+                    pbar.update(1)
+                    print(f"{res[0]} => {'OK' if res[1] else 'FAIL'}")
 
     failures = [r for r in results if not r[1]]
     if failures:
