@@ -14,11 +14,7 @@ Requirements:
 - git
 
 Example:
-  python3 local_build.py \
-    --dockerhub-username YOUR_NAME \
-    --batch-size 20 \
-    --max-parallel 2 \
-    --skip-pushed
+python3 local_build.py --dockerhub-username DFUSERNAME --batch-size 1 --max-parallel 1 --skip-pushed --platform linux/amd64 --show-build-logs
 """
 
 from __future__ import annotations
