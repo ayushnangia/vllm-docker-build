@@ -18,9 +18,28 @@ This repo builds NVIDIA (main) vLLM Docker images for specific commits and pushe
 ## Run
 - Go to Actions → "Build vLLM Docker (NVIDIA)" → Run workflow.
 - Choose a small `batch_size` (e.g., 10–20) to start.
-- Re-run with the next batch by editing `commits.txt` (remove the processed top rows) or increasing `batch_size` as desired.
+- Control concurrency with `max_parallel` (start with 2–3).
+- Already-pushed tags on Docker Hub and SHAs in `blacklist.txt` are skipped automatically.
+- Re-run with the next batch by increasing `batch_size` as desired.
 
 ## Notes
 - Builds do not require a GPU. Runtime does.
 - Keep `--platform linux/amd64` for CUDA base images.
 - If you hit any rate limits or transient failures, re-run; the cache will avoid re-downloading layers.
+
+## Local usage
+
+You can build locally using `local_build.py` with the same filtering (blacklist and skip-pushed):
+
+```bash
+python3 local_build.py \
+  --dockerhub-username YOUR_NAME \
+  --batch-size 20 \
+  --max-parallel 2 \
+  --skip-pushed
+```
+
+Flags:
+- `--no-push` to test builds without pushing images.
+- `--dataset` to point to a different JSONL.
+- `--blacklist` to specify a different blacklist file.
