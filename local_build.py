@@ -76,6 +76,7 @@ def run_command_stream(
     command: List[str],
     cwd: Optional[Path],
     line_prefix: str,
+    log_file: Optional[Path] = None,
 ) -> Tuple[int, str]:
     """Run a command and stream stdout/stderr merged line-by-line with a prefix.
 
@@ -93,12 +94,31 @@ def run_command_stream(
     )
 
     tail = collections.deque(maxlen=200)
+    log_fp = None
+    if log_file is not None:
+        try:
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            log_fp = log_file.open("w", encoding="utf-8")
+        except Exception:
+            log_fp = None
     assert process.stdout is not None
     for raw_line in process.stdout:
         line = raw_line.rstrip("\n")
         tail.append(line)
-        print(f"{line_prefix} {line}")
+        formatted = f"{line_prefix} {line}"
+        print(formatted)
+        if log_fp is not None:
+            try:
+                log_fp.write(formatted + "\n")
+            except Exception:
+                pass
     rc = process.wait()
+    if log_fp is not None:
+        try:
+            log_fp.flush()
+            log_fp.close()
+        except Exception:
+            pass
     return rc, "\n".join(tail)
 
 
@@ -388,13 +408,29 @@ def build_one_commit(
             pass
 
         if show_build_logs:
-            rc, tail = run_command_stream(command, cwd=None, line_prefix=f"[{commit_sha[:7]}]")
+            # Prepare per-commit log path
+            logs_dir = repo_dir_abs.parent / ".build-logs"
+            log_path = logs_dir / f"{commit_sha}.log"
+            rc, tail = run_command_stream(
+                command,
+                cwd=None,
+                line_prefix=f"[{commit_sha[:7]}]",
+                log_file=log_path,
+            )
             ok = rc == 0
             msg = "ok" if ok else tail
         else:
             rc, out, err = run_command(command)
             ok = rc == 0
             msg = "ok" if ok else (err or out)
+            if not ok:
+                # When not streaming, still persist the logs for debugging
+                try:
+                    logs_dir = repo_dir_abs.parent / ".build-logs"
+                    logs_dir.mkdir(parents=True, exist_ok=True)
+                    (logs_dir / f"{commit_sha}.log").write_text((out or "") + ("\n" + err if err else ""))
+                except Exception:
+                    pass
         try:
             building_marker.unlink(missing_ok=True)  # type: ignore[arg-type]
             done_marker.write_text("ok" if ok else "fail")
