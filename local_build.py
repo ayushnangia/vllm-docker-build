@@ -14,7 +14,7 @@ Requirements:
 - git
 
 Example:
-python3 local_build.py --dockerhub-username DFUSERNAME --batch-size 1 --max-parallel 1 --skip-pushed --platform linux/amd64 --show-build-logs
+python3 local_build.py --dockerhub-username DOCKERHUB_USERNAME --batch-size 100 --max-parallel 10 --skip-pushed --platform linux/amd64 --show-build-logs
 """
 
 from __future__ import annotations
@@ -194,6 +194,127 @@ def resolve_dockerfile(repo_dir: Path) -> Optional[Path]:
     return None
 
 
+def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path]) -> None:
+    """Apply lightweight, per-commit context fixes before building.
+
+    Currently mitigates pip ResolutionImpossible caused by outlines>=0.0.43
+    depending on the unavailable 'pyairports' by pinning outlines to 0.0.41
+    in requirements files when present.
+    """
+    candidate_files = [
+        worktree_dir / "requirements-common.txt",
+        worktree_dir / "requirements-cuda.txt",
+        worktree_dir / "requirements.txt",
+        worktree_dir / "requirements-dev.txt",
+        worktree_dir / "requirements-test.txt",
+        worktree_dir / "requirements-lint.txt",
+    ]
+    # Include common patterns: any requirements*.txt in root and under requirements/
+    try:
+        for p in worktree_dir.glob("requirements*.txt"):
+            candidate_files.append(p)
+        for p in (worktree_dir / "requirements").glob("*.txt"):
+            candidate_files.append(p)
+    except Exception:
+        pass
+    outlines_patterns = [
+        re.compile(r"^\s*outlines\s*<\s*0\.1\s*,\s*>=\s*0\.0\.43\s*$", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"^\s*outlines\s*>=\s*0\.0\.43\s*$", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"^\s*outlines\s*~=\s*0\.0\.[4-9]+\s*$", re.IGNORECASE | re.MULTILINE),
+    ]
+    for req_path in candidate_files:
+        try:
+            if not req_path.exists():
+                continue
+            original = req_path.read_text()
+            # First, perform a line-wise rewrite: any non-comment line that mentions
+            # 'outlines' is replaced with a narrow constraint that avoids pyairports.
+            lines = original.splitlines()
+            changed = False
+            new_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    new_lines.append(line)
+                    continue
+                # Drop problematic dev/test-only deps that fail to build wheels
+                if re.match(r"^(sparsezoo|sparseml)\b", stripped, re.IGNORECASE):
+                    changed = True
+                    continue
+                if re.match(r"^outlines\b", stripped, re.IGNORECASE):
+                    new_lines.append("outlines<0.0.43")
+                    changed = True
+                else:
+                    new_lines.append(line)
+            updated = "\n".join(new_lines)
+            # Also fall back to regex replacement for variants we might have missed
+            for pattern in outlines_patterns:
+                newer = pattern.sub("outlines<0.0.43", updated)
+                if newer != updated:
+                    changed = True
+                    updated = newer
+            if changed:
+                req_path.write_text(updated + ("\n" if original.endswith("\n") else ""))
+        except Exception:
+            # Do not fail the build orchestration if a fix cannot be applied
+            pass
+
+    # If requirements files were not present or not changed, ensure Dockerfile
+    # performs a pre-install of outlines==0.0.41 before any requirements installs.
+    if dockerfile_path and dockerfile_path.exists():
+        try:
+            df_text = dockerfile_path.read_text()
+            # Inject pin before common forms of pip install -r ...
+            new_text = df_text
+            py_pat = r"python3\s*-m\s*pip\s+install\s+-r\s+([\w\-./]+)"
+            # Avoid matching 'pip' when part of 'python3 -m pip'
+            pip_pat = r"(?<!-m\s)pip\s+install\s+-r\s+([\w\-./]+)"
+            if re.search(py_pat, new_text):
+                new_text = re.sub(
+                    py_pat,
+                    r"python3 -m pip install --no-deps outlines==0.0.41 && python3 -m pip install -r \1",
+                    new_text,
+                    count=1,
+                )
+            elif re.search(pip_pat, new_text):
+                new_text = re.sub(
+                    pip_pat,
+                    r"pip install --no-deps outlines==0.0.41 && pip install -r \1",
+                    new_text,
+                    count=1,
+                )
+            # Normalize Dockerfile style to reduce warnings
+            # 1) Ensure AS is uppercase in multi-stage lines beginning with FROM
+            new_text = re.sub(
+                r"(?im)^(\s*FROM\b[^\n]*?)\s+as\s+(\w+)",
+                lambda m: f"{m.group(1)} AS {m.group(2)}",
+                new_text,
+            )
+            # 2) Convert legacy ENV "key value" to "key=value" when no '=' present
+            def _normalize_env(line: str) -> str:
+                if not re.match(r"^\s*ENV\b", line):
+                    return line
+                after = re.sub(r"^\s*ENV\s+", "", line)
+                # leave multi-assign or already key=value forms untouched
+                if "=" in after:
+                    return line
+                parts = after.strip().split(None, 1)
+                if len(parts) == 2 and parts[0] and parts[1]:
+                    return re.sub(r"^\s*ENV\s+.*$", f"ENV {parts[0]}={parts[1]}", line)
+                return line
+            new_text = "\n".join(_normalize_env(l) for l in new_text.splitlines()) + ("\n" if new_text.endswith("\n") else "")
+            # 3) Harden deadsnakes PPA add to mitigate transient GPG key fetch timeouts
+            new_text = new_text.replace(
+                "add-apt-repository ppa:deadsnakes/ppa",
+                "apt-get update -y && apt-get install -y gnupg ca-certificates && "
+                "add-apt-repository -y ppa:deadsnakes/ppa || (sleep 10 && add-apt-repository -y ppa:deadsnakes/ppa) || (sleep 30 && add-apt-repository -y ppa:deadsnakes/ppa)",
+            )
+            if new_text != df_text:
+                dockerfile_path.write_text(new_text)
+        except Exception:
+            pass
+
+
 def build_one_commit(
     repo_dir: Path,
     commit_sha: str,
@@ -226,6 +347,9 @@ def build_one_commit(
             dockerfile_path = resolve_dockerfile(worktree_dir)
         if dockerfile_path is None:
             return commit_sha, False, "no Dockerfile"
+
+        # Apply per-commit context fixes before build (e.g., outlines pin)
+        _apply_context_fixes(worktree_dir, dockerfile_path)
 
         tag = f"docker.io/{dockerhub_username}/{image_name}:{commit_sha}"
 
