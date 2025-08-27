@@ -344,12 +344,12 @@ def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path]) ->
                 flags=re.IGNORECASE | re.MULTILINE,
             )
             # 6) Ensure setuptools-scm has a version when building from archived context (no .git)
-            #    Prefer defining an ENV tied to BUILDKITE_COMMIT when available
-            if "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM" not in new_text:
+            #    Define both universal and project-specific envs to satisfy different setups
+            if "SETUPTOOLS_SCM_PRETEND_VERSION" not in new_text and "SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM" not in new_text:
                 if re.search(r"^\s*ENV\s+BUILDKITE_COMMIT=", new_text, re.MULTILINE):
                     new_text = re.sub(
                         r"^(\s*ENV\s+BUILDKITE_COMMIT=.*)$",
-                        r"\1\nENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=0.0.0+${BUILDKITE_COMMIT:-local}",
+                        r"\1\nENV SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+${BUILDKITE_COMMIT:-local}\nENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=0.0.0+${BUILDKITE_COMMIT:-local}",
                         new_text,
                         count=1,
                         flags=re.MULTILINE,
@@ -358,7 +358,7 @@ def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path]) ->
                     # Fallback: insert after first FROM
                     new_text = re.sub(
                         r"^(\s*FROM\b.*)$",
-                        r"\1\nENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=0.0.0+local",
+                        r"\1\nENV SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0+local\nENV SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=0.0.0+local",
                         new_text,
                         count=1,
                         flags=re.MULTILINE,
@@ -367,7 +367,7 @@ def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path]) ->
             # Also guard the direct setup.py invocation by exporting the env inline
             new_text = re.sub(
                 r"python3\s+setup\.py\s+bdist_wheel\s+--dist-dir=dist\s+--py-limited-api=cp38",
-                r"export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM:-0.0.0+${BUILDKITE_COMMIT:-local}} && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38",
+                r"export SETUPTOOLS_SCM_PRETEND_VERSION=${SETUPTOOLS_SCM_PRETEND_VERSION:-0.0.0+${BUILDKITE_COMMIT:-local}} SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM=${SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM:-0.0.0+${BUILDKITE_COMMIT:-local}} && python3 setup.py bdist_wheel --dist-dir=dist --py-limited-api=cp38",
                 new_text,
                 flags=re.IGNORECASE,
             )
