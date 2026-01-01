@@ -1,20 +1,28 @@
 #!/usr/bin/env python3
 """
-Local builder for vLLM commit-tagged Docker images.
+Local builder for commit-tagged Docker images (vLLM, SGLang).
 
 Features:
-- Reads commits from nvidia-vllm-docker.jsonl (only those with a Dockerfile)
-- Respects blacklist.txt
+- Reads commits from JSONL dataset (with optional Dockerfile content)
+- Respects blacklist file
 - Optionally skips commits that already have a tag on Docker Hub
 - Batches and optional parallel builds
 - Push optional (default: push enabled)
+- Project-aware context fixes (vLLM-specific fixes only apply to vLLM builds)
 
 Requirements:
 - Docker with Buildx enabled
 - git
 
-Example:
-python3 local_build.py --dockerhub-username DOCKERHUB_USERNAME --batch-size 100 --max-parallel 10 --skip-pushed --platform linux/amd64 --show-build-logs
+Example (vLLM):
+python3 local_build.py --dockerhub-username USER --batch-size 100 --max-parallel 10 --skip-pushed
+
+Example (SGLang):
+python3 local_build.py --dockerhub-username USER --project sglang \\
+  --dataset sglang-docker.jsonl --image-name sglang-docker \\
+  --repo-url https://github.com/sgl-project/sglang.git \\
+  --blacklist blacklist-sglang.txt --workdir sglang \\
+  --batch-size 10 --skip-pushed
 """
 
 from __future__ import annotations
@@ -156,6 +164,11 @@ def fetch_existing_tags(dockerhub_username: str, image_name: str) -> Set[str]:
 
 
 def iter_commits_with_dockerfile(dataset_path: Path) -> Iterable[Tuple[str, Optional[str]]]:
+    """Iterate over commits from the dataset.
+
+    Yields (commit_sha, dockerfile_content) tuples where dockerfile_content
+    can be None (meaning use the Dockerfile from the repo) or a string.
+    """
     with dataset_path.open("r") as f:
         for line in f:
             if not line.strip():
@@ -163,8 +176,8 @@ def iter_commits_with_dockerfile(dataset_path: Path) -> Iterable[Tuple[str, Opti
             obj = json.loads(line)
             commit = obj.get("commit")
             dockerfile = obj.get("Dockerfile")
-            if dockerfile is not None and isinstance(commit, str):
-                yield commit, dockerfile
+            if isinstance(commit, str):
+                yield commit, dockerfile  # dockerfile can be None
 
 
 def ensure_repo_cloned(repo_dir: Path, repo_url: str) -> None:
@@ -214,13 +227,96 @@ def resolve_dockerfile(repo_dir: Path) -> Optional[Path]:
     return None
 
 
-def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path]) -> None:
+def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
+    """Apply generic Dockerfile fixes that work for any project.
+
+    These fixes normalize Dockerfile syntax and handle common build issues:
+    - Uppercase AS in multi-stage builds
+    - ENV key=value normalization
+    - Remove .git bind mounts (not present in archived context)
+    - Harden deadsnakes PPA installation
+    - Fix stray RUN line breaks
+    """
+    try:
+        df_text = dockerfile_path.read_text()
+        new_text = df_text
+
+        # 1) Ensure AS is uppercase in multi-stage lines beginning with FROM
+        new_text = re.sub(
+            r"(?im)^(\s*FROM\b[^\n]*?)\s+as\s+(\w+)",
+            lambda m: f"{m.group(1)} AS {m.group(2)}",
+            new_text,
+        )
+
+        # 2) Convert legacy ENV "key value" to "key=value" when no '=' present
+        def _normalize_env(line: str) -> str:
+            if not re.match(r"^\s*ENV\b", line):
+                return line
+            after = re.sub(r"^\s*ENV\s+", "", line)
+            if "=" in after:
+                return line
+            parts = after.strip().split(None, 1)
+            if len(parts) == 2 and parts[0] and parts[1]:
+                return re.sub(r"^\s*ENV\s+.*$", f"ENV {parts[0]}={parts[1]}", line)
+            return line
+        new_text = "\n".join(_normalize_env(l) for l in new_text.splitlines()) + ("\n" if new_text.endswith("\n") else "")
+
+        # 3) Remove bind-mount of .git (not present in archived context)
+        new_text = re.sub(
+            r"\s*--mount=type=bind,\s*source=\.git,\s*target=\.git\\?\s*\\?\\?",
+            "",
+            new_text,
+        )
+
+        # 4) Harden deadsnakes PPA add to mitigate transient GPG key fetch timeouts
+        new_text = new_text.replace(
+            "add-apt-repository ppa:deadsnakes/ppa",
+            "apt-get update -y && apt-get install -y gnupg ca-certificates && "
+            "add-apt-repository -y ppa:deadsnakes/ppa || (sleep 10 && add-apt-repository -y ppa:deadsnakes/ppa) || (sleep 30 && add-apt-repository -y ppa:deadsnakes/ppa)",
+        )
+
+        # 5) Fix stray RUN line breaks that cause Dockerfile parse errors
+        lines_fix: list[str] = []
+        i = 0
+        lines_src = new_text.splitlines()
+        while i < len(lines_src):
+            cur = lines_src[i]
+            if cur.strip().upper() == "RUN" and i + 1 < len(lines_src):
+                nxt = lines_src[i + 1]
+                if not re.match(r"^\s*(FROM|RUN|CMD|LABEL|MAINTAINER|EXPOSE|ENV|ADD|COPY|ENTRYPOINT|VOLUME|USER|WORKDIR|ARG|ONBUILD|STOPSIGNAL|HEALTHCHECK|SHELL)\b", nxt.strip(), re.IGNORECASE):
+                    lines_fix.append("RUN " + nxt.lstrip())
+                    i += 2
+                    continue
+            lines_fix.append(cur)
+            i += 1
+        new_text = "\n".join(lines_fix) + ("\n" if new_text.endswith("\n") else "")
+
+        if new_text != df_text:
+            dockerfile_path.write_text(new_text)
+    except Exception:
+        pass
+
+
+def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path], project: str = "vllm") -> None:
     """Apply lightweight, per-commit context fixes before building.
 
-    Currently mitigates pip ResolutionImpossible caused by outlines>=0.0.43
+    Args:
+        worktree_dir: Path to the build context directory
+        dockerfile_path: Path to the Dockerfile (may be modified)
+        project: Project name ("vllm" or "sglang") to apply project-specific fixes
+
+    For vLLM: mitigates pip ResolutionImpossible caused by outlines>=0.0.43
     depending on the unavailable 'pyairports' by pinning outlines to 0.0.41
     in requirements files when present.
+
+    For all projects: applies generic Dockerfile normalization fixes.
     """
+    # Skip vLLM-specific dependency fixes for other projects
+    if project != "vllm":
+        # Only apply generic Dockerfile fixes for non-vLLM projects
+        if dockerfile_path and dockerfile_path.exists():
+            _apply_generic_dockerfile_fixes(dockerfile_path)
+        return
     candidate_files = [
         worktree_dir / "requirements-common.txt",
         worktree_dir / "requirements-cuda.txt",
@@ -405,6 +501,7 @@ def build_one_commit(
     cache_to: Optional[str] = None,
     dataset_dockerfile: Optional[str] = None,
     show_build_logs: bool = False,
+    project: str = "vllm",
 ) -> Tuple[str, bool, str]:
     repo_dir_abs = repo_dir.resolve()
     contexts_root = repo_dir_abs.parent / ".build-contexts"
@@ -427,8 +524,8 @@ def build_one_commit(
         if dockerfile_path is None:
             return commit_sha, False, "no Dockerfile"
 
-        # Apply per-commit context fixes before build (e.g., outlines pin)
-        _apply_context_fixes(worktree_dir, dockerfile_path)
+        # Apply per-commit context fixes before build (e.g., outlines pin for vLLM)
+        _apply_context_fixes(worktree_dir, dockerfile_path, project=project)
 
         tag = f"docker.io/{dockerhub_username}/{image_name}:{commit_sha}"
 
@@ -525,7 +622,7 @@ def _active_buildx_driver() -> Optional[str]:
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Local builder for vLLM commit-tagged Docker images",
+        description="Local builder for commit-tagged Docker images (vLLM, SGLang)",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument("--dockerhub-username", required=True, help="Docker Hub username for tagging")
@@ -548,6 +645,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--show-build-logs",
         action="store_true",
         help="Stream build logs (adds --progress=plain and prefixes each line)",
+    )
+    parser.add_argument(
+        "--project",
+        default="vllm",
+        choices=["vllm", "sglang"],
+        help="Project type for applying project-specific fixes (default: %(default)s)",
     )
     return parser.parse_args(argv)
 
@@ -609,6 +712,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             cache_to=cache_to,
             dataset_dockerfile=dockerfile_text,
             show_build_logs=args.show_build_logs,
+            project=args.project,
         )
 
     if args.max_parallel <= 1:
