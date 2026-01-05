@@ -162,12 +162,12 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
             new_text = re.sub(r"RUN\s+.*?add-apt-repository\s+.*?ppa:deadsnakes/ppa.*?\n", "RUN echo 'Skipping deadsnakes PPA'\n", new_text)
             
             # Patch out python3.10 installs from apt (order matters: specific packages first!)
-            # Use negative lookahead to avoid partial matches
-            new_text = re.sub(r"python3\.10-distutils", "", new_text)
-            new_text = re.sub(r"python3\.10-venv", "", new_text)
-            new_text = re.sub(r"python3\.10-dev", "", new_text)
+            # Avoid matching paths (starting with /) to keep update-alternatives happy
+            new_text = re.sub(r"(?<!/)python3\.10-distutils", "", new_text)
+            new_text = re.sub(r"(?<!/)python3\.10-venv", "", new_text)
+            new_text = re.sub(r"(?<!/)python3\.10-dev", "", new_text)
             # Only match standalone python3.10, not part of python3.10-something
-            new_text = re.sub(r"python3\.10(?!-)", "", new_text)
+            new_text = re.sub(r"(?<!/)python3\.10(?!-)", "", new_text)
         else:
             # For non-focal, still harden PPA
             ppa_fix = (
@@ -210,6 +210,78 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         new_text = new_text.replace("git apply /sgl-workspace/DeepEP/third-party/nvshmem.patch", "git apply /sgl-workspace/DeepEP/third-party/nvshmem.patch || true")
         new_text = new_text.replace("sed -i '1i#include <unistd.h>' examples/moe_shuffle.cu", "find . -name \"*.cu\" -o -name \"*.cpp\" -o -name \"*.h\" | xargs sed -i '1i#include <unistd.h>' || true")
         new_text = new_text.replace("cmake --build build --target install -j", "cmake --build build --target install -j4")
+
+        # 7) SGLang-specific fixes: Use build context instead of git clone
+        # This ensures we build the exact commit, not latest master
+        if "sgl-project/sglang" in new_text:
+            # The SGLang Dockerfile typically has a RUN command like:
+            # RUN pip install ... && git clone ... && cd sglang && pip install -e "python[all]"
+            # We need to split this into:
+            # 1. RUN pip install ... (pre-clone setup)
+            # 2. COPY . /sgl-workspace/sglang (use build context)
+            # 3. RUN pip install -e "python[all]" (install sglang from local copy)
+
+            # First, handle the complex case where git clone is inside a multi-command RUN
+            # Split at "git clone" and reconstruct
+            clone_pattern = r'(RUN\s+[^&]*(?:&&[^&]*)*?)(\s*&&\s*git\s+clone\s+[^\n]*sgl-project/sglang\.git[^\n]*)(\s*\\?\s*\n\s*&&\s*cd\s+sglang\s*\\?\s*\n)?(.*)'
+            match = re.search(clone_pattern, new_text, re.DOTALL)
+            if match:
+                pre_clone = match.group(1).rstrip(' \\\n&')
+                post_clone = match.group(4) if match.group(4) else ""
+                # Clean up the post_clone part - remove leading && and cd sglang
+                post_clone = re.sub(r'^\s*\\?\s*\n?\s*&&\s*cd\s+sglang\s*\\?\s*\n?\s*', '', post_clone)
+                post_clone = re.sub(r'^\s*&&\s*', '', post_clone.strip())
+                # Remove any remaining "cd sglang &&" at the start
+                post_clone = re.sub(r'^cd\s+sglang\s*\\?\s*\n?\s*&&\s*', '', post_clone)
+
+                # Reconstruct:
+                # 1. Pre-clone RUN (if there's actual content beyond just "RUN")
+                # 2. COPY for sglang (into python subdir since that's where pyproject.toml is)
+                # 3. Post-clone RUN in sglang directory
+                replacement_parts = []
+                if pre_clone.strip() and pre_clone.strip() != "RUN":
+                    replacement_parts.append(pre_clone + "\n")
+                replacement_parts.append("\nCOPY . /sgl-workspace/sglang\n")
+                if post_clone.strip():
+                    # The post_clone likely has the pip install command
+                    replacement_parts.append(f"RUN cd /sgl-workspace/sglang && {post_clone}")
+                # Force downgrade outlines to avoid pyairports dependency issue
+                # This MUST come AFTER sglang install since sglang requires outlines>=0.0.44
+                # Also pin numpy<2.0.0 and transformers to avoid version conflicts
+                # Pin uvloop<=0.21.0 to fix "no current event loop" error (see sglang issue #11851)
+                replacement_parts.append("\n# Force outlines downgrade and fix version conflicts\nRUN pip3 install 'outlines<0.0.43' 'numpy<2.0.0' 'transformers>=4.43.2,<4.45' 'uvloop<=0.21.0'\n")
+
+                new_text = new_text[:match.start()] + "".join(replacement_parts) + new_text[match.end():]
+            else:
+                # Simple case: standalone git clone line
+                new_text = re.sub(
+                    r'RUN\s+git\s+clone\s+[^\n]*sgl-project/sglang\.git[^\n]*\n',
+                    'COPY python /sgl-workspace/sglang/python\nCOPY docker /sgl-workspace/sglang/docker\n',
+                    new_text
+                )
+
+            # Fix flashinfer installation to use compatible version
+            # SGLang commits from 2024 need flashinfer 0.1.6 (not 0.2.x which has breaking API changes)
+            # The _grouped_size_compiled_for_decode_kernels function was removed in 0.2.x
+            flashinfer_pinned_install = (
+                "# Install flashinfer with pinned version for API compatibility\n"
+                "# SGLang commits from 2024 require flashinfer 0.1.x (0.2.x has breaking changes)\n"
+                "RUN TORCH_VERSION=$(python3 -c \"import torch; print(torch.__version__.split('+')[0][:3])\") && \\\n"
+                "    CUDA_VERSION_SHORT=$(nvcc --version | grep -oP '[0-9]+\\\\.[0-9]+' | head -1 | tr -d '.') && \\\n"
+                "    echo \"Detected torch=$TORCH_VERSION cuda=cu$CUDA_VERSION_SHORT\" && \\\n"
+                "    python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu${CUDA_VERSION_SHORT}/torch${TORCH_VERSION}/ || \\\n"
+                "    python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch2.4/ || \\\n"
+                "    echo \"Warning: flashinfer 0.1.6 installation failed, trying latest\" && \\\n"
+                "    python3 -m pip --no-cache-dir install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/"
+            )
+
+            # Replace the existing flashinfer installation block (handles multi-line if/elif/fi)
+            new_text = re.sub(
+                r'ARG CUDA_VERSION\nRUN if \[.*?flashinfer.*?\n\s*fi',
+                flashinfer_pinned_install,
+                new_text,
+                flags=re.DOTALL
+            )
 
         if new_text != df_text: dockerfile_path.write_text(new_text)
     except Exception as e: print(f"Fix error: {e}")

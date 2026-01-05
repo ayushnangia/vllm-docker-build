@@ -1,0 +1,903 @@
+{
+  "total_commits": 74,
+  "commits_with_dockerfiles": 72,
+  "commits_without_dockerfiles": [
+    "6f560c761b2fc2f577682d0cfda62630f37a3bb0",
+    "bb3a3b6675b1844a13ebe368ad693f3dc75b315b"
+  ],
+  "dockerfile_locations": {
+    ".devcontainer/Dockerfile": 46,
+    "docker/Dockerfile": 67,
+    "examples/frontend_language/usage/triton/Dockerfile": 63,
+    "examples/usage/triton/Dockerfile": 9
+  },
+  "detailed_results": [
+    {
+      "commit": "021f76e4f49861b2e9ea9ccff06a46d577e3c548",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "09deb20deef8181a23f66c933ea74b86fee47366",
+      "dockerfiles": [
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "examples/usage/triton/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "10189d08dde1096f5759316c0a6ff05962714c4b",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "132dad874d2e44592d03a112e4b7d63b153e8346",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "148254d4db8bf3bffee23710cd1acbd5711ebd1b",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "187b85b7f38496653948a2aba546d53c09ada0f3",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "1acca3a2c685221cdb181c2abda4f635e1ead435",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "1bf1cf195302fdff14a4321eb8a17831f5c2fc11",
+      "dockerfiles": [
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "examples/usage/triton/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "205d5cb407f7860c79df870b3f045d74b8292f77",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "23c764b18aeb37c42ddedd7468f1a5753df1f232",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "25c83fff6a80d9e3d2749f2ead122f96fdc127e9",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "25e1816eff104da56f97ce494e255306603fe2f6",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "2716830802ae8c2428fdacde7c4041b6f7852d68",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "2854a5ea9fbb31165936f633ab99915dec760f8d",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "2a413829f42b8e8433a3e7cfd91cc9cb241cfbc0",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "2a754e57b052e249ed4f8572cb6f0069ba6a495e",
+      "dockerfiles": [
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "examples/usage/triton/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "2bd18e2d767e3a0f8afb5aff427bc8e6e4d297c0",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "2ed68d7a6c4737618652cfa0288443a5a5d73b14",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "2f42749184ca3679d2bb0361903f46632408f9a2",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "31589e177e2df6014607293fb4603cfd63297b67",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "3212c2ad3f7e4fb473dc807b4b176020a778ed5b",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "4418f599a54699181b35d89b0def2697cccb721a",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "5239d79568f3b5ce55106cb3c9d9bee7cc8e7477",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "564a898ad975192b593be81387d11faf15cb1d3e",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.3"
+      }
+    },
+    {
+      "commit": "5e02330137a1ce44f29cc41a4da5f010c4bffec6",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "62757db6f0f09a6dff15b1ee1ac3029602951509",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "6a2941f4d037cb5fa7c927342dc7f09387c29ab0",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.3"
+      }
+    },
+    {
+      "commit": "6b231325b9782555eb8e1cfcf27820003a98382b",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "6b7038babd562de099b583957ff19b78c4689a37",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "6cb00c6398126513e37c43dd975d461765fb44c7",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "6e2da5156176ed2d7fe2445b7c7316bc1650b20a",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "6f560c761b2fc2f577682d0cfda62630f37a3bb0",
+      "dockerfiles": [],
+      "recommended": null
+    },
+    {
+      "commit": "6fc175968c3a9fc0521948aa3636887cd6d84107",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "73b13e69b4207f240650c6b51eba7a7204f64939",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "79961afa8281f98f380d11db45c8d4b6e66a574f",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "7ce36068914503c3a53ad7be23ab29831fb8aa63",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "86a876d883a7c7a0e2b0fca5ef86e20ab92c0694",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "880221bd3b3e56a4bc2268fe9a9f77f426accf6c",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "8f8f96a6217ea737c94e7429e480196319594459",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "912788c095c9306daabc996fd06e59cf062a783b",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "915140fd18c9ff4193e994e6d756ea762a52240a",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "9183c23eca51bf76159e81dfd6edf5770796c2d8",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "9216b10678a036a1797e19693b0445c889016687",
+      "dockerfiles": [
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "examples/usage/triton/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "93470a14116a60fe5dd43f0599206e8ccabdc211",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "9c064bf78af8558dbc50fbd809f65dcafd6fd965",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "9c088829ee2a28263f36d0814fde448c6090b5bc",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "9c745d078e29e153a64300bd07636c7c9c1c42d5",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "a191a0e47c2f0b0c8aed28080b9cb78624365e92",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "a37e1247c183cff86a18f2ed1a075e40704b1c5e",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "a73c4df4387a30bd8cac94f828995bcf3bc2e615",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "a99801e0750f41553fedd02e36f58d835c4d4bd6",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "ab4a83b25909aa98330b838a224e4fe5c943e483",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "ac971ff633de330de3ded7f7475caaf7cd5bbdcd",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.3"
+      }
+    },
+    {
+      "commit": "adca585bfb59a6c29cf18393b4a68bd5b4068f08",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "b170930534acbb9c1619a3c83670a839ceee763a",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "b1e5a33ae337d20e35e966b8d82a02a913d32689",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "b77a02cdfdb4cd58be3ebc6a66d076832c309cfc",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "bb3a3b6675b1844a13ebe368ad693f3dc75b315b",
+      "dockerfiles": [],
+      "recommended": null
+    },
+    {
+      "commit": "bc3f6db2dd6a84000232aab063a0449b83c07c22",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "c087ddd6865a52634326a05af66429cb5531cd16",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "c2bd094d6eb621a51a19d6595ddb3ddcc9030970",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "c2f212d672ccaf8a1e5ef09099e981d943600b14",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "c98e84c21e4313d7d307425ca43e61753a53a9f7",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "cd7e32e2cb150fbf216c5c05697139c68bab4a8d",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "d1112d8548eb13c842900b3a8d622345f9737759",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "da47621ccc4f8e8381f3249257489d5fe32aff1b",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "dc1881326f61734a4160620b6e12a5542b756066",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "dc67d9769382cf83b3e2644a4366d6473445a6c6",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "dd1012fcbe2a1fb36c44e10c16f8d0bcd8e9da25",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "ddcf9fe3beacd8aed573c711942194dd02350da4",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.5"
+      }
+    },
+    {
+      "commit": "df7f61ee7d235936e6663f07813d7c03c4ec1603",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true
+      }
+    },
+    {
+      "commit": "e3ec6bf4b65a50e26e936a96adc7acc618292002",
+      "dockerfiles": [
+        ".devcontainer/Dockerfile",
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    },
+    {
+      "commit": "e5db40dcbce67157e005f524bf6a5bea7dcb7f34",
+      "dockerfiles": [
+        "docker/Dockerfile",
+        "examples/frontend_language/usage/triton/Dockerfile"
+      ],
+      "recommended": "docker/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": true,
+        "flashinfer_cuda": "cu121",
+        "flashinfer_torch": "torch2.4"
+      }
+    },
+    {
+      "commit": "e822e5900b98d89d19e0a293d9ad384f4df2945a",
+      "dockerfiles": [
+        "examples/usage/triton/Dockerfile"
+      ],
+      "recommended": "examples/usage/triton/Dockerfile",
+      "flashinfer_info": {
+        "has_flashinfer": false
+      }
+    }
+  ]
+}
