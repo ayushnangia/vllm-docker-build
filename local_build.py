@@ -142,43 +142,55 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         # 3) Remove .git bind mounts
         new_text = re.sub(r"\s*--mount=type=bind,\s*source=\.git,\s*target=\.git\\?\s*\\?\\?", "", new_text)
 
-        # 4) Focal / Python 3.10 Fix - Simplified and robust
-        if is_focal:
-            # Inject Miniforge at the top (no ToS requirements unlike Miniconda)
-            conda_install = textwrap.dedent("""
-                RUN apt-get update && apt-get install -y wget bzip2 ca-certificates && \\
-                    wget -q https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O miniforge.sh && \\
-                    bash miniforge.sh -b -p /opt/conda && rm miniforge.sh && \\
-                    /opt/conda/bin/conda install -y python=3.10 && \\
-                    ln -sf /opt/conda/bin/python3 /usr/bin/python3 && \\
-                    ln -sf /opt/conda/bin/python3 /usr/bin/python3.10 && \\
-                    ln -sf /opt/conda/bin/pip /usr/bin/pip && \\
-                    ln -sf /opt/conda/bin/pip /usr/bin/pip3
-                ENV PATH=/opt/conda/bin:$PATH
-            """).strip()
-            new_text = re.sub(r"(^FROM\s+.*?\n)", "\\1" + conda_install + "\n", new_text, count=1, flags=re.MULTILINE)
-            
-            # Remove any add-apt-repository deadsnakes lines  
-            new_text = re.sub(r"RUN\s+.*?add-apt-repository\s+.*?ppa:deadsnakes/ppa.*?\n", "RUN echo 'Skipping deadsnakes PPA'\n", new_text)
-            
-            # Patch out python3.10 installs from apt (order matters: specific packages first!)
-            # Avoid matching paths (starting with /) to keep update-alternatives happy
-            new_text = re.sub(r"(?<!/)python3\.10-distutils", "", new_text)
-            new_text = re.sub(r"(?<!/)python3\.10-venv", "", new_text)
-            new_text = re.sub(r"(?<!/)python3\.10-dev", "", new_text)
-            # Only match standalone python3.10, not part of python3.10-something
-            new_text = re.sub(r"(?<!/)python3\.10(?!-)", "", new_text)
-        else:
-            # For non-focal, still harden PPA
-            ppa_fix = (
-                "(DEBIAN_FRONTEND=noninteractive apt-get update && "
-                "apt-get install -y gnupg2 ca-certificates curl lsb-release && "
-                "CODENAME=$(lsb_release -sc 2>/dev/null || . /etc/os-release && echo $VERSION_CODENAME); "
-                "for i in 1 2 3; do apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys BA6932366A755776 && break || sleep 2; done && "
-                "echo \"deb http://ppa.launchpad.net/deadsnakes/ppa/ubuntu $CODENAME main\" > /etc/apt/sources.list.d/deadsnakes.list && "
-                "apt-get update)"
-            )
-            new_text = re.sub(r"add-apt-repository\s+(?:-y\s+)?ppa:deadsnakes/ppa(?:\s+-y)?", ppa_fix, new_text)
+        # 4) Fix Python 3.10 on Ubuntu 20.04 (focal) - Build from source
+        # The deadsnakes PPA no longer has packages for Ubuntu 20.04 (focal)
+        # Solution: Build Python 3.10 from source instead
+        if is_focal and "ppa:deadsnakes" in new_text:
+            # Build Python 3.10 from source - this replaces the entire deadsnakes approach
+            python_from_source = textwrap.dedent(r'''
+                # Build Python 3.10 from source (deadsnakes PPA no longer supports focal)
+                RUN apt-get update && apt-get install -y \
+                    build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
+                    libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget libbz2-dev \
+                    liblzma-dev tk-dev uuid-dev curl git sudo libibverbs-dev && \
+                    cd /tmp && \
+                    wget -q https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz && \
+                    tar -xzf Python-3.10.14.tgz && \
+                    cd Python-3.10.14 && \
+                    ./configure --enable-optimizations --enable-shared --with-ensurepip=install LDFLAGS="-Wl,-rpath /usr/local/lib" && \
+                    make -j$(nproc) && \
+                    make altinstall && \
+                    ldconfig && \
+                    ln -sf /usr/local/bin/python3.10 /usr/bin/python3 && \
+                    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 && \
+                    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip && \
+                    python3 --version && \
+                    pip3 --version && \
+                    cd / && rm -rf /tmp/Python-3.10.14* && \
+                    rm -rf /var/lib/apt/lists/* && apt-get clean
+            ''').strip()
+
+            # Replace the entire RUN block that uses deadsnakes with our source build
+            # Pattern: Match RUN block from tzdata echo to apt clean (handles backslash continuations)
+            # Use re.DOTALL so .* matches newlines, and match non-greedily to the first "apt clean"
+            deadsnakes_pattern = r"RUN\s+echo\s+'tzdata[^']+'\s*\|.*?&&\s*apt\s+clean"
+            match = re.search(deadsnakes_pattern, new_text, re.DOTALL)
+            if match:
+                new_text = new_text[:match.start()] + python_from_source + new_text[match.end():]
+            else:
+                # Fallback: remove the entire RUN block containing deadsnakes and add Python from source
+                # Try matching RUN ... deadsnakes ... ending with newline before next command
+                fallback_pattern = r"RUN\s+[^\n]*deadsnakes[^\n]*(?:\\\n[^\n]*)*\n"
+                if re.search(fallback_pattern, new_text):
+                    new_text = re.sub(fallback_pattern, python_from_source + "\n", new_text)
+                else:
+                    # Last resort: Insert Python build after the first FROM line
+                    new_text = re.sub(
+                        r'(FROM\s+[^\n]+\n)',
+                        r'\1\n' + python_from_source + '\n',
+                        new_text,
+                        count=1
+                    )
 
         # 5) Fix stray RUN
         lines_fix = []
@@ -249,7 +261,9 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
                 # This MUST come AFTER sglang install since sglang requires outlines>=0.0.44
                 # Also pin numpy<2.0.0 and transformers to avoid version conflicts
                 # Pin uvloop<=0.21.0 to fix "no current event loop" error (see sglang issue #11851)
-                replacement_parts.append("\n# Force outlines downgrade and fix version conflicts\nRUN pip3 install 'outlines<0.0.43' 'numpy<2.0.0' 'transformers>=4.43.2,<4.45' 'uvloop<=0.21.0'\n")
+                # Pin transformers==4.45.2 to avoid AutoProcessor import issues in newer versions
+                # Fix version conflicts - no conda needed, just pip
+                replacement_parts.append("\n# Force outlines downgrade and fix version conflicts\nRUN pip3 install 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2'\n")
 
                 new_text = new_text[:match.start()] + "".join(replacement_parts) + new_text[match.end():]
             else:
@@ -266,13 +280,7 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
             flashinfer_pinned_install = (
                 "# Install flashinfer with pinned version for API compatibility\n"
                 "# SGLang commits from 2024 require flashinfer 0.1.x (0.2.x has breaking changes)\n"
-                "RUN TORCH_VERSION=$(python3 -c \"import torch; print(torch.__version__.split('+')[0][:3])\") && \\\n"
-                "    CUDA_VERSION_SHORT=$(nvcc --version | grep -oP '[0-9]+\\\\.[0-9]+' | head -1 | tr -d '.') && \\\n"
-                "    echo \"Detected torch=$TORCH_VERSION cuda=cu$CUDA_VERSION_SHORT\" && \\\n"
-                "    python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu${CUDA_VERSION_SHORT}/torch${TORCH_VERSION}/ || \\\n"
-                "    python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch2.4/ || \\\n"
-                "    echo \"Warning: flashinfer 0.1.6 installation failed, trying latest\" && \\\n"
-                "    python3 -m pip --no-cache-dir install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/"
+                "RUN python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch2.4/"
             )
 
             # Replace the existing flashinfer installation block (handles multi-line if/elif/fi)
@@ -282,6 +290,35 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
                 new_text,
                 flags=re.DOTALL
             )
+
+            # Also handle simple flashinfer install patterns (direct pip install flashinfer)
+            # PRESERVE the original torch version (e.g., torch2.3 or torch2.4) to avoid ABI mismatch
+            def replace_flashinfer_preserve_torch(match):
+                orig_url = match.group(0)
+                # Extract torch version from original URL (e.g., torch2.3, torch2.4)
+                torch_match = re.search(r'torch(\d+\.\d+)', orig_url)
+                torch_ver = torch_match.group(1) if torch_match else "2.4"
+                return f"pip3 --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{torch_ver}/"
+
+            new_text = re.sub(
+                r"pip3?\s+(?:--no-cache-dir\s+)?install\s+flashinfer\s+-i\s+https://flashinfer\.ai/whl/[^\s]+",
+                replace_flashinfer_preserve_torch,
+                new_text
+            )
+
+        # Detect torch version from existing flashinfer URL in Dockerfile
+        torch_ver_match = re.search(r'flashinfer\.ai/whl/cu\d+/torch(\d+\.\d+)', df_text)
+        detected_torch_ver = torch_ver_match.group(1) if torch_ver_match else "2.4"
+
+        # CATCH-ALL: Ensure package fixes are applied to ALL SGLang Dockerfiles
+        # This handles old Dockerfiles that don't use git clone patterns
+        # Note: flashinfer must be installed separately from its own index
+        # Use detected torch version to avoid ABI mismatch
+        # Pin transformers==4.45.2 to avoid AutoProcessor import issues in newer versions (4.57+)
+        package_fixes = f"\n# Force package version fixes for compatibility\nRUN pip3 install 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
+        # Only add if not already present
+        if "transformers==4.45.2" not in new_text and "transformers>=4.45.0" not in new_text:
+            new_text = new_text.rstrip() + package_fixes
 
         if new_text != df_text: dockerfile_path.write_text(new_text)
     except Exception as e: print(f"Fix error: {e}")
@@ -308,7 +345,7 @@ def build_one_commit(repo_dir: Path, commit_sha: str, image_name: str, dockerhub
         if not dockerfile_path: return commit_sha, False, "No Dockerfile"
         _apply_context_fixes(worktree_dir, dockerfile_path, project)
         tag = f"docker.io/{dockerhub_username}/{image_name}:{commit_sha}"
-        cmd = ["docker", "buildx", "build", "--platform", platform, "--file", str(dockerfile_path), "--tag", tag, "--label", f"org.opencontainers.image.revision={commit_sha}"]
+        cmd = ["docker", "buildx", "build", "--platform", platform, "--file", str(dockerfile_path), "--tag", tag, "--label", f"org.opencontainers.image.revision={commit_sha}", "--no-cache"]
         if show_build_logs: cmd += ["--progress", "plain"]
         if cache_from: cmd += ["--cache-from", cache_from]
         if cache_to: cmd += ["--cache-to", cache_to]
