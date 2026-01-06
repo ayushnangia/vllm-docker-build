@@ -70,3 +70,81 @@ The build system automatically patches known issues before building:
 - Docker with Buildx enabled
 - git
 - Python 3 with optional `tqdm` for progress bars
+
+---
+
+## SGLang Commit Tracking & Verification
+
+### Primary Focus Files
+
+We only care about these files for SGLang benchmarking:
+
+- **`sglang_track_all.json`**: Master tracking file with all SGLang commits (JSONL format)
+- **`commit-status/success.txt`**: 16 commits with successful benchmarks
+- **`commit-status/failed/`**: Categorized failure lists by error type
+
+### Commit Verification Workflow
+
+For each commit, we do **case-by-case analysis** of:
+
+1. **`commit_hash`** (human/PR commit) - the performance change we're measuring
+2. **`parent_commit`** (baseline) - the commit before the PR, used for comparison
+
+For BOTH commits, verify:
+- Dockerfile exists and is correct (`has_dockerfile`, `dockerfile_path`, `dockerfile_content`)
+- The right commit is compiled into the Docker image
+- The build is pushed correctly to Docker Hub (`ayushnangia16/nvidia-sglang-docker:<commit_hash>`)
+
+### Commit Identity Inside Docker
+
+**CRITICAL**: Always embed commit identifiers in Docker images so we can verify the correct code is running:
+
+1. **Build-time label**: `--label org.opencontainers.image.revision=<commit_hash>`
+2. **Build-arg**: `--build-arg SGLANG_COMMIT=<commit_hash>`
+3. **Runtime proof file**: `/opt/sglang_commit.txt` containing the commit SHA
+4. **Dockerfile ARG**: `ARG SGLANG_COMMIT` injected after first FROM
+
+### Verification Script
+
+Use `verify_sglang_docker.py` to validate Docker images have correct commit-level installation:
+
+```bash
+# Verify a single commit
+python3 verify_sglang_docker.py 6b231325b9782555eb8e1cfcf27820003a98382b
+
+# Verify all commits from success_with_dockerfile.txt
+python3 verify_sglang_docker.py --all
+
+# Output as JSON
+python3 verify_sglang_docker.py --all --json
+```
+
+The script checks:
+1. **Image exists** locally
+2. **Commit file** `/opt/sglang_commit.txt` exists and matches expected SHA
+3. **SGLang installed** via pip (checks for editable install)
+4. **SGLang imports** successfully
+
+### Manual Verification Commands
+
+```bash
+# Check Docker image labels
+docker inspect ayushnangia16/nvidia-sglang-docker:<commit> | jq '.[0].Config.Labels'
+
+# Check commit proof inside container
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> cat /opt/sglang_commit.txt
+
+# Verify sglang is installed from local source (editable)
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> pip show sglang | grep -E "^(Version|Location|Editable)"
+
+# Test sglang import
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> python3 -c "import sglang; print('OK')"
+```
+
+### Why This Matters
+
+Since `parent_commit` and `commit_hash` are often just **1 commit apart**, if the Docker build doesn't properly pin to the exact commit, we could benchmark the WRONG code and have NO way to detect it. The verification workflow ensures:
+
+- Human commit image contains exactly the PR code
+- Parent commit image contains exactly the baseline code
+- Benchmarks are comparing the correct versions
