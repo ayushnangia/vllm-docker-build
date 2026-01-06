@@ -33,7 +33,7 @@ except Exception:
         return _Dummy()
 
 DEFAULT_IMAGE_NAME = "sglang-docker"
-DEFAULT_REPO_URL = "https://github.com/vllm-project/vllm.git"
+DEFAULT_REPO_URL = "https://github.com/sgl-project/sglang.git"
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
     process = subprocess.Popen(
