@@ -48,6 +48,12 @@ SGL_KERNEL_FROM_SOURCE_COMMITS = {
     "93470a14": ("2.5.1", "cu124"),   # sgl-kernel==0.0.8
 }
 
+# Commits that need torchao version fix (torchao 0.9.0 incompatible with torch 2.7.1)
+# torchao 0.12.0+ required for torch 2.7.1 per https://github.com/pytorch/ao/issues/2919
+TORCHAO_FIX_COMMITS = {
+    "a99801e0",  # has torchao==0.9.0 + torch==2.7.1 conflict
+}
+
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
     process = subprocess.Popen(
         command, cwd=str(cwd) if cwd else None,
@@ -384,6 +390,24 @@ RUN sed -i 's/"sgl-kernel==[^"]*"/"sgl-kernel"/g' /sgl-workspace/sglang/python/p
                     new_text = re.sub(
                         r'(COPY \. /sgl-workspace/sglang\n)(RUN cd /sgl-workspace/sglang)',
                         r'\1' + sgl_kernel_build + r'\2',
+                        new_text,
+                        count=1
+                    )
+                    break
+
+        # Fix torchao version conflict (0.9.0 incompatible with torch 2.7.1)
+        if commit_sha:
+            for prefix in TORCHAO_FIX_COMMITS:
+                if commit_sha.startswith(prefix):
+                    # Patch pyproject.toml to use torchao>=0.12.0 instead of 0.9.0
+                    torchao_fix = '''# Fix torchao version (0.9.0 incompatible with torch 2.7.1, need 0.12.0+)
+RUN sed -i 's/"torchao==0.9.0"/"torchao>=0.12.0"/g' /sgl-workspace/sglang/python/pyproject.toml
+
+'''
+                    # Insert after COPY . /sgl-workspace/sglang
+                    new_text = re.sub(
+                        r'(COPY \. /sgl-workspace/sglang\n)',
+                        r'\1' + torchao_fix,
                         new_text,
                         count=1
                     )
