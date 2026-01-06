@@ -32,7 +32,7 @@ except Exception:
             def __exit__(self, *args): return False
         return _Dummy()
 
-DEFAULT_IMAGE_NAME = "nvidia-vllm-docker"
+DEFAULT_IMAGE_NAME = "sglang-docker"
 DEFAULT_REPO_URL = "https://github.com/vllm-project/vllm.git"
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
@@ -310,12 +310,18 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         torch_ver_match = re.search(r'flashinfer\.ai/whl/cu\d+/torch(\d+\.\d+)', df_text)
         detected_torch_ver = torch_ver_match.group(1) if torch_ver_match else "2.4"
 
+        # Map torch major.minor to full version for pinning
+        # FORCE torch 2.4.0 minimum to avoid FLA layer assertion (requires torch >= 2.4.0)
+        torch_full_ver = "2.4.0"
+        detected_torch_ver = "2.4"
+
         # CATCH-ALL: Ensure package fixes are applied to ALL SGLang Dockerfiles
         # This handles old Dockerfiles that don't use git clone patterns
         # Note: flashinfer must be installed separately from its own index
         # Use detected torch version to avoid ABI mismatch
         # Pin transformers==4.45.2 to avoid AutoProcessor import issues in newer versions (4.57+)
-        package_fixes = f"\n# Force package version fixes for compatibility\nRUN pip3 install 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
+        # CRITICAL: Pin torch to match flashinfer version to avoid ABI mismatch
+        package_fixes = f"\n# Force package version fixes for compatibility (torch must match flashinfer)\nRUN pip3 install 'torch=={torch_full_ver}' 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
         # Only add if not already present
         if "transformers==4.45.2" not in new_text and "transformers>=4.45.0" not in new_text:
             new_text = new_text.rstrip() + package_fixes
