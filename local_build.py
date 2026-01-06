@@ -32,7 +32,7 @@ except Exception:
             def __exit__(self, *args): return False
         return _Dummy()
 
-DEFAULT_IMAGE_NAME = "sglang-docker"
+DEFAULT_IMAGE_NAME = "nvidia-sglang-docker"
 DEFAULT_REPO_URL = "https://github.com/sgl-project/sglang.git"
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:

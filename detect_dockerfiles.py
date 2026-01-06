@@ -2,7 +2,7 @@
 """
 Detect Dockerfile paths in SGLang commits.
 
-This script scans each commit in the sglang-docker.jsonl file and identifies
+This script scans each commit in the nvidia-sglang-docker.jsonl file and identifies
 what Dockerfiles exist at that commit. This helps determine the correct
 Dockerfile to use for each commit instead of using a fallback/generated one.
 """
@@ -111,7 +111,7 @@ def check_flashinfer_in_dockerfile(repo_path: str, commit: str, dockerfile_path:
 
 def main():
     repo_path = "/home/ubuntu/vllm-docker-build/sglang"
-    jsonl_path = "/home/ubuntu/vllm-docker-build/sglang-docker.jsonl"
+    jsonl_path = "/home/ubuntu/vllm-docker-build/nvidia-sglang-docker.jsonl"
 
     # Read commits from JSONL
     commits = []
@@ -210,7 +210,7 @@ def main():
     print(f"\nDetailed results saved to: {output_path}")
 
     # Generate updated JSONL with Dockerfile paths
-    updated_jsonl_path = "/home/ubuntu/vllm-docker-build/sglang-docker-with-paths.jsonl"
+    updated_jsonl_path = "/home/ubuntu/vllm-docker-build/nvidia-sglang-docker-with-paths.jsonl"
     with open(updated_jsonl_path, "w") as f:
         for result in results:
             entry = {
