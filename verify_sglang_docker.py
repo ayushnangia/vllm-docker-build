@@ -9,6 +9,7 @@ Usage:
 """
 
 import argparse
+import re
 import subprocess
 import sys
 import json
@@ -66,7 +67,15 @@ def verify_commit(commit_sha: str, repo: str = "ayushnangia16/nvidia-sglang-dock
         results["passed"] = False
         print(f"  [FAIL] /opt/sglang_commit.txt not found")
     else:
-        commit_in_file = output.split('\n')[0].strip()
+        # Find the commit SHA line (40 hex chars) - skip banner lines
+        commit_in_file = None
+        for line in output.split('\n'):
+            line = line.strip()
+            if re.match(r'^[a-f0-9]{40}$', line):
+                commit_in_file = line
+                break
+        if not commit_in_file:
+            commit_in_file = output.split('\n')[0].strip()  # fallback
         matches = commit_in_file == commit_sha
         results["checks"]["commit_file"] = {
             "exists": True,

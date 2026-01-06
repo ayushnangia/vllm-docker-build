@@ -35,6 +35,16 @@ except Exception:
 DEFAULT_IMAGE_NAME = "nvidia-sglang-docker"
 DEFAULT_REPO_URL = "https://github.com/sgl-project/sglang.git"
 
+# Commits that need flashinfer built from source (no prebuilt wheels for their torch version)
+FLASHINFER_FROM_SOURCE_COMMITS = {
+    "73b13e69", "8609e637", "880221bd", "8f3173d0",
+}
+
+# Commits that need sgl-kernel built from source (version on PyPI doesn't exist)
+SGL_KERNEL_FROM_SOURCE_COMMITS = {
+    "9c088829",
+}
+
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
     process = subprocess.Popen(
         command, cwd=str(cwd) if cwd else None,
@@ -118,7 +128,7 @@ def resolve_dockerfile(repo_dir: Path) -> Optional[Path]:
         if path.exists(): return path
     return None
 
-def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
+def _apply_generic_dockerfile_fixes(dockerfile_path: Path, commit_sha: str = "") -> None:
     try:
         df_text = dockerfile_path.read_text()
         new_text = df_text
@@ -319,64 +329,69 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
                     new_text
                 )
 
-            # Fix flashinfer installation to use compatible version
-            # SGLang commits from 2024 need flashinfer 0.1.6 (not 0.2.x which has breaking API changes)
-            # The _grouped_size_compiled_for_decode_kernels function was removed in 0.2.x
-            flashinfer_pinned_install = (
-                "# Install flashinfer with pinned version for API compatibility\n"
-                "# SGLang commits from 2024 require flashinfer 0.1.x (0.2.x has breaking changes)\n"
-                "RUN python3 -m pip --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch2.4/"
-            )
+            # Trust pyproject.toml for flashinfer/torch versions
+            # Each commit's Dockerfile and pyproject.toml have the correct versions
+            pass
 
-            # Replace the existing flashinfer installation block (handles multi-line if/elif/fi)
-            new_text = re.sub(
-                r'ARG CUDA_VERSION\nRUN if \[.*?flashinfer.*?\n\s*fi',
-                flashinfer_pinned_install,
-                new_text,
-                flags=re.DOTALL
-            )
+        # Inject flashinfer build-from-source for commits without prebuilt wheels
+        if commit_sha:
+            for prefix in FLASHINFER_FROM_SOURCE_COMMITS:
+                if commit_sha.startswith(prefix):
+                    # Add flashinfer source build before sglang install
+                    # Must use --no-build-isolation and pre-install deps to avoid PyPI wheel
+                    # Also patch pyproject.toml to remove flashinfer dep (already installed from source)
+                    flashinfer_build = '''# Build flashinfer from source (no prebuilt wheel for this torch version)
+RUN pip install torch==2.7.1 ninja numpy --extra-index-url https://download.pytorch.org/whl/cu126 && \\
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && git checkout v0.2.6.post1 && \\
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install --no-build-isolation --no-deps -v . && \\
+    rm -rf /tmp/flashinfer
 
-            # Also handle simple flashinfer install patterns (direct pip install flashinfer)
-            # PRESERVE the original torch version (e.g., torch2.3 or torch2.4) to avoid ABI mismatch
-            def replace_flashinfer_preserve_torch(match):
-                orig_url = match.group(0)
-                # Extract torch version from original URL (e.g., torch2.3, torch2.4)
-                torch_match = re.search(r'torch(\d+\.\d+)', orig_url)
-                torch_ver = torch_match.group(1) if torch_match else "2.4"
-                return f"pip3 --no-cache-dir install 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{torch_ver}/"
+# Remove flashinfer from pyproject.toml deps (already built from source)
+RUN sed -i 's/"flashinfer_python[^"]*",/# flashinfer built from source/g' /sgl-workspace/sglang/python/pyproject.toml
 
-            new_text = re.sub(
-                r"pip3?\s+(?:--no-cache-dir\s+)?install\s+flashinfer\s+-i\s+https://flashinfer\.ai/whl/[^\s]+",
-                replace_flashinfer_preserve_torch,
-                new_text
-            )
+'''
+                    # Insert before the RUN that installs sglang (after COPY . /sgl-workspace/sglang)
+                    new_text = re.sub(
+                        r'(COPY \. /sgl-workspace/sglang\n)(RUN cd /sgl-workspace/sglang)',
+                        r'\1' + flashinfer_build + r'\2',
+                        new_text,
+                        count=1
+                    )
+                    break
 
-        # Detect torch version from existing flashinfer URL in Dockerfile
-        torch_ver_match = re.search(r'flashinfer\.ai/whl/cu\d+/torch(\d+\.\d+)', df_text)
-        detected_torch_ver = torch_ver_match.group(1) if torch_ver_match else "2.4"
+        # Inject sgl-kernel build-from-source for commits where PyPI version doesn't exist
+        if commit_sha:
+            for prefix in SGL_KERNEL_FROM_SOURCE_COMMITS:
+                if commit_sha.startswith(prefix):
+                    # Build sgl-kernel from the included source folder
+                    # Must install torch first as sgl-kernel needs it for CMake
+                    # Then patch pyproject.toml to remove the version constraint
+                    sgl_kernel_build = '''# Build sgl-kernel from source (required version not on PyPI)
+RUN pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 && \\
+    cd /sgl-workspace/sglang/sgl-kernel && \\
+    pip install scikit-build-core ninja cmake && \\
+    pip install --no-build-isolation -v .
 
-        # Map torch major.minor to full version for pinning
-        # FORCE torch 2.4.0 minimum to avoid FLA layer assertion (requires torch >= 2.4.0)
-        torch_full_ver = "2.4.0"
-        detected_torch_ver = "2.4"
+# Remove sgl-kernel version constraint from pyproject.toml (already built from source)
+RUN sed -i 's/"sgl-kernel==[^"]*"/"sgl-kernel"/g' /sgl-workspace/sglang/python/pyproject.toml
 
-        # CATCH-ALL: Ensure package fixes are applied to ALL SGLang Dockerfiles
-        # This handles old Dockerfiles that don't use git clone patterns
-        # Note: flashinfer must be installed separately from its own index
-        # Use detected torch version to avoid ABI mismatch
-        # Pin transformers==4.45.2 to avoid AutoProcessor import issues in newer versions (4.57+)
-        # CRITICAL: Pin torch to match flashinfer version to avoid ABI mismatch
-        package_fixes = f"\n# Force package version fixes for compatibility (torch must match flashinfer, torchvision must match torch)\nRUN pip3 install 'torch=={torch_full_ver}' 'torchvision==0.19.0' 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
-        # Only add if not already present
-        if "transformers==4.45.2" not in new_text and "transformers>=4.45.0" not in new_text:
-            new_text = new_text.rstrip() + package_fixes
+'''
+                    # Insert before the RUN that installs sglang (after COPY . /sgl-workspace/sglang)
+                    new_text = re.sub(
+                        r'(COPY \. /sgl-workspace/sglang\n)(RUN cd /sgl-workspace/sglang)',
+                        r'\1' + sgl_kernel_build + r'\2',
+                        new_text,
+                        count=1
+                    )
+                    break
 
         if new_text != df_text: dockerfile_path.write_text(new_text)
     except Exception as e: print(f"Fix error: {e}")
 
-def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path], project: str = "vllm") -> None:
+def _apply_context_fixes(worktree_dir: Path, dockerfile_path: Optional[Path], project: str = "vllm", commit_sha: str = "") -> None:
     if project != "vllm":
-        if dockerfile_path and dockerfile_path.exists(): _apply_generic_dockerfile_fixes(dockerfile_path)
+        if dockerfile_path and dockerfile_path.exists(): _apply_generic_dockerfile_fixes(dockerfile_path, commit_sha)
         return
     if dockerfile_path and dockerfile_path.exists():
         txt = dockerfile_path.read_text()
@@ -426,7 +441,7 @@ def build_one_commit(repo_dir: Path, commit_sha: str, image_name: str, dockerhub
                 RUN python -c "import torch; print(f'PyTorch: {{torch.__version__}}, CUDA: {{torch.cuda.is_available()}}')"
             """))
         if not dockerfile_path: return commit_sha, False, "No Dockerfile"
-        _apply_context_fixes(worktree_dir, dockerfile_path, project)
+        _apply_context_fixes(worktree_dir, dockerfile_path, project, commit_sha)
         tag = f"docker.io/{dockerhub_username}/{image_name}:{commit_sha}"
         cmd = [
             "docker", "buildx", "build",
