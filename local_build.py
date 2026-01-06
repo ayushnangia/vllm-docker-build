@@ -41,8 +41,11 @@ FLASHINFER_FROM_SOURCE_COMMITS = {
 }
 
 # Commits that need sgl-kernel built from source (version on PyPI doesn't exist)
+# Maps commit prefix -> (torch_version, cuda_index) for correct wheel compatibility
 SGL_KERNEL_FROM_SOURCE_COMMITS = {
-    "9c088829",
+    "9c088829": ("2.6.0", "cu124"),   # sgl-kernel==0.0.9.post2
+    "d1112d85": ("2.5.1", "cu124"),   # sgl-kernel==0.0.5.post2
+    "93470a14": ("2.5.1", "cu124"),   # sgl-kernel==0.0.8
 }
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
@@ -362,13 +365,13 @@ RUN sed -i 's/"flashinfer_python[^"]*",/# flashinfer built from source/g' /sgl-w
 
         # Inject sgl-kernel build-from-source for commits where PyPI version doesn't exist
         if commit_sha:
-            for prefix in SGL_KERNEL_FROM_SOURCE_COMMITS:
+            for prefix, (torch_ver, cuda_idx) in SGL_KERNEL_FROM_SOURCE_COMMITS.items():
                 if commit_sha.startswith(prefix):
                     # Build sgl-kernel from the included source folder
                     # Must install torch first as sgl-kernel needs it for CMake
                     # Then patch pyproject.toml to remove the version constraint
-                    sgl_kernel_build = '''# Build sgl-kernel from source (required version not on PyPI)
-RUN pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 && \\
+                    sgl_kernel_build = f'''# Build sgl-kernel from source (required version not on PyPI)
+RUN pip install torch=={torch_ver} --index-url https://download.pytorch.org/whl/{cuda_idx} && \\
     cd /sgl-workspace/sglang/sgl-kernel && \\
     pip install scikit-build-core ninja cmake && \\
     pip install --no-build-isolation -v .
