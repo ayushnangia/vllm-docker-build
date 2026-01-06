@@ -143,19 +143,25 @@ def main():
     args = parser.parse_args()
 
     if args.all:
-        # Read commits from success_with_dockerfile.csv (both human and parent commits)
-        csv_file = Path(__file__).parent / "commit-status" / "success_with_dockerfile.csv"
-        if not csv_file.exists():
-            print(f"Error: {csv_file} not found")
-            sys.exit(1)
+        # Read commits from both CSV files (both human and parent commits)
+        csv_files = [
+            Path(__file__).parent / "commit-status" / "success_with_dockerfile.csv",
+            Path(__file__).parent / "commit-status" / "other_commits.csv",
+        ]
         commits = []
-        for line in csv_file.read_text().splitlines()[1:]:  # Skip header
-            if line.strip() and not line.startswith('#'):
-                parts = line.split(',')
-                if len(parts) >= 2:
-                    commits.append(parts[0].strip())  # human commit
-                    commits.append(parts[1].strip())  # parent commit
+        for csv_file in csv_files:
+            if not csv_file.exists():
+                print(f"Warning: {csv_file} not found, skipping")
+                continue
+            print(f"Reading commits from {csv_file.name}...")
+            for line in csv_file.read_text().splitlines()[1:]:  # Skip header
+                if line.strip() and not line.startswith('#'):
+                    parts = line.split(',')
+                    if len(parts) >= 4:
+                        commits.append(parts[2].strip())  # commit_hash (column 3)
+                        commits.append(parts[3].strip())  # parent_commit (column 4)
         commits = list(dict.fromkeys(commits))  # Remove duplicates, preserve order
+        print(f"Total unique commits to verify: {len(commits)}\n")
     elif args.commit:
         commits = [args.commit]
     else:
