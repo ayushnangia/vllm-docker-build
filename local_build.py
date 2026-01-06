@@ -123,6 +123,29 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         df_text = dockerfile_path.read_text()
         new_text = df_text
 
+        # === COMMIT PROOF INJECTION ===
+        # Add ARG SGLANG_COMMIT if not present (will be passed from --build-arg)
+        if "ARG SGLANG_COMMIT" not in new_text:
+            # Insert after first FROM line
+            new_text = re.sub(
+                r'(FROM\s+[^\n]+\n)',
+                r'\1ARG SGLANG_COMMIT\n',
+                new_text,
+                count=1
+            )
+
+        # Add commit proof file creation if not present
+        if "/opt/sglang_commit.txt" not in new_text:
+            # Find the last RUN command and add after it, or before final CMD/ENTRYPOINT
+            commit_proof_cmd = '\n# Write commit proof for runtime verification\nRUN mkdir -p /opt && echo "${SGLANG_COMMIT:-unknown}" > /opt/sglang_commit.txt && echo "Patched by local_build.py" >> /opt/sglang_commit.txt\n'
+
+            # Try to insert before CMD or ENTRYPOINT
+            if re.search(r'\n(CMD|ENTRYPOINT)\s', new_text):
+                new_text = re.sub(r'\n(CMD|ENTRYPOINT)\s', commit_proof_cmd + r'\n\1 ', new_text, count=1)
+            else:
+                # Append at end
+                new_text = new_text.rstrip() + commit_proof_cmd
+
         # Detect focal (Ubuntu 20.04)
         is_focal = "ubuntu20.04" in new_text.lower() or "ubuntu:20.04" in new_text.lower() or "focal" in new_text.lower()
 
@@ -223,8 +246,27 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         new_text = new_text.replace("sed -i '1i#include <unistd.h>' examples/moe_shuffle.cu", "find . -name \"*.cu\" -o -name \"*.cpp\" -o -name \"*.h\" | xargs sed -i '1i#include <unistd.h>' || true")
         new_text = new_text.replace("cmake --build build --target install -j", "cmake --build build --target install -j4")
 
-        # 7) SGLang-specific fixes: Use build context instead of git clone
-        # This ensures we build the exact commit, not latest master
+        # 7) SGLang-specific fixes: Use build context instead of git clone or PyPI
+        # This ensures we build the exact commit, not latest master or PyPI version
+
+        # CRITICAL: Replace pip install "sglang[all]" from PyPI with local source install
+        # This pattern installs whatever is on PyPI, not the archived commit!
+        if 'pip' in new_text and '"sglang[all]"' in new_text and 'COPY' not in new_text:
+            # Replace PyPI install with local source install
+            new_text = re.sub(
+                r'pip3?\s+(?:--no-cache-dir\s+)?install\s+"sglang\[all\]"',
+                'pip3 --no-cache-dir install -e "/sgl-workspace/sglang/python[all]"',
+                new_text
+            )
+            # Add COPY command before the install if not present
+            if 'COPY . /sgl-workspace/sglang' not in new_text and 'COPY python' not in new_text:
+                # Insert COPY after WORKDIR
+                new_text = re.sub(
+                    r'(WORKDIR\s+/sgl-workspace\s*\n)',
+                    r'\1\n# Copy archived commit source (not PyPI)\nCOPY . /sgl-workspace/sglang\n',
+                    new_text
+                )
+
         if "sgl-project/sglang" in new_text:
             # The SGLang Dockerfile typically has a RUN command like:
             # RUN pip install ... && git clone ... && cd sglang && pip install -e "python[all]"
@@ -321,7 +363,7 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path) -> None:
         # Use detected torch version to avoid ABI mismatch
         # Pin transformers==4.45.2 to avoid AutoProcessor import issues in newer versions (4.57+)
         # CRITICAL: Pin torch to match flashinfer version to avoid ABI mismatch
-        package_fixes = f"\n# Force package version fixes for compatibility (torch must match flashinfer)\nRUN pip3 install 'torch=={torch_full_ver}' 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
+        package_fixes = f"\n# Force package version fixes for compatibility (torch must match flashinfer, torchvision must match torch)\nRUN pip3 install 'torch=={torch_full_ver}' 'torchvision==0.19.0' 'outlines<0.0.43' 'numpy<2.0.0' 'uvloop<=0.21.0' 'transformers==4.45.2' && pip3 uninstall -y flashinfer 2>/dev/null; pip3 install --no-cache-dir 'flashinfer==0.1.6' -i https://flashinfer.ai/whl/cu121/torch{detected_torch_ver}/\n"
         # Only add if not already present
         if "transformers==4.45.2" not in new_text and "transformers>=4.45.0" not in new_text:
             new_text = new_text.rstrip() + package_fixes
@@ -347,11 +389,37 @@ def build_one_commit(repo_dir: Path, commit_sha: str, image_name: str, dockerhub
         dockerfile_path = resolve_dockerfile(worktree_dir)
         if not dockerfile_path and project == "sglang":
             dockerfile_path = worktree_dir / "Dockerfile"
-            dockerfile_path.write_text("FROM nvcr.io/nvidia/tritonserver:24.04-py3-min\nENV DEBIAN_FRONTEND=noninteractive\nRUN apt update && apt install -y python3 python3-pip curl git sudo\nWORKDIR /sgl-workspace\nRUN git clone --depth=1 https://github.com/sgl-project/sglang.git && cd sglang && pip install -e \"python[all]\"")
+            # CRITICAL: Use COPY from build context, NOT git clone (which would get HEAD)
+            # The build context is already the archived commit via _materialize_commit_tree
+            dockerfile_path.write_text(textwrap.dedent(f"""\
+                FROM nvcr.io/nvidia/tritonserver:24.04-py3-min
+                ENV DEBIAN_FRONTEND=noninteractive
+                ARG SGLANG_COMMIT={commit_sha}
+
+                RUN apt update && apt install -y python3 python3-pip curl git sudo
+                WORKDIR /sgl-workspace
+
+                # Copy archived commit contents (NOT git clone which would get HEAD)
+                COPY . /sgl-workspace/sglang
+
+                # Write commit proof file for runtime verification
+                RUN mkdir -p /opt && echo "$SGLANG_COMMIT" > /opt/sglang_commit.txt
+
+                # Install sglang from copied source
+                RUN cd /sgl-workspace/sglang && pip install -e "python[all]"
+            """))
         if not dockerfile_path: return commit_sha, False, "No Dockerfile"
         _apply_context_fixes(worktree_dir, dockerfile_path, project)
         tag = f"docker.io/{dockerhub_username}/{image_name}:{commit_sha}"
-        cmd = ["docker", "buildx", "build", "--platform", platform, "--file", str(dockerfile_path), "--tag", tag, "--label", f"org.opencontainers.image.revision={commit_sha}", "--no-cache"]
+        cmd = [
+            "docker", "buildx", "build",
+            "--platform", platform,
+            "--file", str(dockerfile_path),
+            "--tag", tag,
+            "--label", f"org.opencontainers.image.revision={commit_sha}",
+            "--build-arg", f"SGLANG_COMMIT={commit_sha}",  # Pass commit for in-container proof
+            "--no-cache"
+        ]
         if show_build_logs: cmd += ["--progress", "plain"]
         if cache_from: cmd += ["--cache-from", cache_from]
         if cache_to: cmd += ["--cache-to", cache_to]
