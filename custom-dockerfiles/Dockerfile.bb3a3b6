@@ -1,0 +1,48 @@
+# Dockerfile for SGLang commit bb3a3b6675b1844a13ebe368ad693f3dc75b315b
+# Date: February 3, 2024 - "Faster JSON decoding for LLaVA" (PR #137)
+#
+# Build: docker build -f Dockerfile.bb3a3b6 -t sglang:bb3a3b6 .
+# Run:   docker run --gpus all -it sglang:bb3a3b6
+
+FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3.10-venv \
+    python3-pip \
+    git \
+    wget \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# Install PyTorch (version compatible with February 2024 SGLang)
+RUN pip3 install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+
+# Clone SGLang at specific commit
+WORKDIR /sgl-workspace
+RUN git clone https://github.com/sgl-project/sglang.git && \
+    cd sglang && \
+    git checkout bb3a3b6675b1844a13ebe368ad693f3dc75b315b
+
+# Install SGLang dependencies and package
+WORKDIR /sgl-workspace/sglang
+RUN pip3 install -e "python[all]"
+
+# Write commit hash for verification
+RUN echo "bb3a3b6675b1844a13ebe368ad693f3dc75b315b" > /opt/sglang_commit.txt
+
+# Set entrypoint
+WORKDIR /sgl-workspace
+CMD ["python3", "-c", "import sglang; print('SGLang loaded successfully from commit bb3a3b6')"]

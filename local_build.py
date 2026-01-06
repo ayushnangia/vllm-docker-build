@@ -40,6 +40,16 @@ FLASHINFER_FROM_SOURCE_COMMITS = {
     "73b13e69", "8609e637", "880221bd", "8f3173d0",
 }
 
+# Triton-style commits (examples/usage/triton/Dockerfile) that need flashinfer from source
+# These are old v0.1.14-v0.1.17 commits where flashinfer>=0.0.4 is no longer on PyPI
+TRITON_FLASHINFER_FROM_SOURCE_COMMITS = {
+    "09deb20d",  # v0.1.14
+    "1bf1cf19",  # v0.1.14
+    "2a754e57",  # v0.1.17
+    "9216b106",  # v0.1.14
+    "e822e590",  # v0.1.14
+}
+
 # Commits that need sgl-kernel built from source (version on PyPI doesn't exist)
 # Maps commit prefix -> (torch_version, cuda_index) for correct wheel compatibility
 SGL_KERNEL_FROM_SOURCE_COMMITS = {
@@ -332,12 +342,41 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path, commit_sha: str = "")
 
                 new_text = new_text[:match.start()] + "".join(replacement_parts) + new_text[match.end():]
             else:
-                # Simple case: standalone git clone line
+                # Simple case: standalone git clone line (e.g. examples/usage/triton/Dockerfile)
+                # git clone creates 'sglang' subfolder relative to WORKDIR, so use relative COPY
                 new_text = re.sub(
                     r'RUN\s+git\s+clone\s+[^\n]*sgl-project/sglang\.git[^\n]*\n',
-                    'COPY python /sgl-workspace/sglang/python\nCOPY docker /sgl-workspace/sglang/docker\n',
+                    'COPY . sglang\n',
                     new_text
                 )
+                
+                # For triton-style commits needing flashinfer from source
+                if commit_sha:
+                    for prefix in TRITON_FLASHINFER_FROM_SOURCE_COMMITS:
+                        if commit_sha.startswith(prefix):
+                            # Build flashinfer from source and patch pyproject.toml
+                            # Use v0.1.2 which is compatible with older sglang and torch 2.1-2.3
+                            triton_flashinfer_build = '''
+# Build flashinfer from source (old versions not on PyPI)
+RUN pip install ninja numpy && \\
+    pip install torch==2.3.0 --extra-index-url https://download.pytorch.org/whl/cu121 && \\
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && git checkout v0.1.2 && \\
+    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install . && \\
+    rm -rf /tmp/flashinfer
+
+# Patch pyproject.toml to skip flashinfer install (already built)
+RUN sed -i 's/"flashinfer[^"]*",*//g' sglang/python/pyproject.toml
+
+'''
+                            # Insert after COPY . sglang
+                            new_text = re.sub(
+                                r'(COPY \. sglang\n)',
+                                r'\1' + triton_flashinfer_build,
+                                new_text,
+                                count=1
+                            )
+                            break
 
             # Trust pyproject.toml for flashinfer/torch versions
             # Each commit's Dockerfile and pyproject.toml have the correct versions
@@ -444,7 +483,11 @@ def build_one_commit(repo_dir: Path, commit_sha: str, image_name: str, dockerhub
     if not ok_ctx: return commit_sha, False, f"Context fail: {msg}"
     try:
         dockerfile_path = resolve_dockerfile(worktree_dir)
-        if not dockerfile_path and project == "sglang":
+        # Use explicit Dockerfile from JSONL if provided (for commits without repo Dockerfile)
+        if not dockerfile_path and dataset_dockerfile and project == "sglang":
+            dockerfile_path = worktree_dir / "Dockerfile"
+            dockerfile_path.write_text(dataset_dockerfile)
+        elif not dockerfile_path and project == "sglang":
             dockerfile_path = worktree_dir / "Dockerfile"
             # CRITICAL: Use COPY from build context, NOT git clone (which would get HEAD)
             # The build context is already the archived commit via _materialize_commit_tree

@@ -4,61 +4,110 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository builds NVIDIA vLLM Docker images for specific commits from the vllm-project/vllm repository and pushes them to Docker Hub. It supports both GitHub Actions (CI) and local builds.
+This repository builds Docker images for specific commits from ML inference frameworks (vLLM, SGLang) and pushes them to Docker Hub. Primary use case: benchmarking performance changes between commits by ensuring each Docker image contains exactly the specified commit.
 
 ## Build Commands
 
-### Local Build
+### Local Build (Primary)
 ```bash
 python3 local_build.py \
   --dockerhub-username YOUR_NAME \
   --batch-size 20 \
   --max-parallel 2 \
-  --skip-pushed
+  --skip-pushed \
+  --project sglang  # or vllm
 ```
 
 Key flags:
-- `--no-push`: Test builds without pushing to Docker Hub
-- `--skip-pushed`: Skip commits that already have tags on Docker Hub
-- `--show-build-logs`: Stream build logs with commit prefixes
-- `--dataset`: Point to a different JSONL file (default: `nvidia-vllm-docker.jsonl`)
-- `--blacklist`: Specify a different blacklist file (default: `blacklist.txt`)
-- `--platform`: Build platform (default: `linux/amd64`)
+- `--no-push`: Test builds locally without pushing to Docker Hub
+- `--skip-pushed`: Skip commits already on Docker Hub
+- `--show-build-logs`: Stream build logs with `[commit]` prefixes
+- `--dataset`: JSONL file with commits (default: `nvidia-sglang-docker.jsonl`)
+- `--blacklist`: Skip commits in this file (default: `blacklist.txt`)
+- `--project`: `sglang` (default) or `vllm`
+
+### Docker Image Verification
+```bash
+# Verify single commit
+python3 verify_sglang_docker.py <commit_sha>
+
+# Verify all commits from CSV files
+python3 verify_sglang_docker.py --all
+
+# JSON output
+python3 verify_sglang_docker.py --all --json
+```
+
+### Dockerfile Detection
+```bash
+python3 detect_dockerfiles.py
+```
+Scans commits in JSONL to find what Dockerfiles exist at each commit.
 
 ### GitHub Actions
-Trigger via Actions → "Build vLLM Docker (NVIDIA)" → Run workflow. Configure `batch_size` and `max_parallel` inputs.
+Trigger: Actions → "Build vLLM Docker (NVIDIA)" → Run workflow with `batch_size` and `max_parallel`.
 
 ## Architecture
 
-### Core Components
+### Build Pipeline (`local_build.py`)
 
-**`local_build.py`**: Main local build orchestrator
-- Reads commits from `nvidia-vllm-docker.jsonl` (JSONL with commit SHAs and optional Dockerfile content)
-- Filters out commits in `blacklist.txt` and optionally those already pushed to Docker Hub
-- Uses `git archive` to export clean build contexts (avoids worktree race conditions)
-- Applies automatic fixes to Dockerfiles before building (outlines pinning, setuptools-scm env vars, Dockerfile syntax normalization)
-- Supports parallel builds via ThreadPoolExecutor
-- Uses local Buildx cache for layer sharing across builds
+1. **Commit extraction**: Reads commits from JSONL dataset, filters by blacklist and existing tags
+2. **Context materialization**: Uses `git archive` to export clean build context for each commit (thread-safe via `_repo_lock`)
+3. **Dockerfile resolution**: Checks `docker/Dockerfile`, then `Dockerfile`, then `examples/usage/triton/Dockerfile`
+4. **Automatic fixes** (`_apply_generic_dockerfile_fixes`):
+   - Injects `ARG SGLANG_COMMIT` and `/opt/sglang_commit.txt` for commit verification
+   - Replaces `git clone` with `COPY` to use archived build context
+   - Builds Python 3.10 from source on Ubuntu 20.04 (deadsnakes PPA deprecated)
+   - Fixes DeepEP/nvshmem compilation issues
+   - Normalizes Dockerfile syntax (uppercase `AS`, `ENV key=value`)
+5. **Build execution**: Parallel builds via ThreadPoolExecutor with Buildx caching
 
-**`.github/workflows/build-vllm.yml`**: CI workflow
-- Matrix strategy builds commits in parallel
-- Uses GHA cache for Docker layers
-- Maximizes disk space on runners before building
+### Special Commit Handling
+
+Some commits need dependencies built from source:
+- `FLASHINFER_FROM_SOURCE_COMMITS`: Commits needing flashinfer built from source (no prebuilt wheels)
+- `SGL_KERNEL_FROM_SOURCE_COMMITS`: Commits needing sgl-kernel built from source
 
 ### Key Data Files
 
-- `nvidia-vllm-docker.jsonl`: Source dataset with commit SHAs and Dockerfile content
-- `blacklist.txt`: Commit SHAs to skip (one per line)
-- `commits.txt`: Simple list of commit SHAs (legacy/alternative format)
+| File | Purpose |
+|------|---------|
+| `nvidia-sglang-docker.jsonl` | SGLang commits with Dockerfile content |
+| `nvidia-vllm-docker.jsonl` | vLLM commits with Dockerfile content |
+| `blacklist.txt` / `blacklist-sglang.txt` | Commits to skip |
+| `commit-status/success_with_dockerfile.csv` | Commits with successful benchmarks |
+| `commit-status/other_commits.csv` | Parent commits for comparison |
+| `commit-status/failed/*.txt` | Categorized failure lists by error type |
 
-### Build Context Fixes (`_apply_context_fixes`)
+### Commit Verification System
 
-The build system automatically patches known issues before building:
-- Pins `outlines` package to `<0.0.43` to avoid missing `pyairports` dependency
-- Removes problematic deps like `sparsezoo`/`sparseml`
-- Sets `SETUPTOOLS_SCM_PRETEND_VERSION` env vars for builds without `.git`
-- Normalizes Dockerfile syntax (uppercase `AS`, `ENV` key=value format)
-- Removes `.git` bind mounts that fail in archived contexts
+**Why it matters**: When benchmarking `commit_hash` vs `parent_commit` (often 1 commit apart), the wrong code in Docker means invalid benchmarks.
+
+Verification checks:
+1. Image exists locally
+2. `/opt/sglang_commit.txt` matches expected SHA
+3. SGLang installed via pip (editable install preferred)
+4. `import sglang` succeeds
+
+Build-time commit identity:
+- `--label org.opencontainers.image.revision=<commit>`
+- `--build-arg SGLANG_COMMIT=<commit>`
+- Writes SHA to `/opt/sglang_commit.txt`
+
+### Manual Docker Verification
+```bash
+# Check labels
+docker inspect ayushnangia16/nvidia-sglang-docker:<commit> | jq '.[0].Config.Labels'
+
+# Check commit proof
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> cat /opt/sglang_commit.txt
+
+# Check pip install type
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> pip show sglang | grep -E "^(Version|Location|Editable)"
+
+# Test import
+docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> python3 -c "import sglang; print('OK')"
+```
 
 ## Required Secrets (GitHub Actions)
 
@@ -69,82 +118,4 @@ The build system automatically patches known issues before building:
 
 - Docker with Buildx enabled
 - git
-- Python 3 with optional `tqdm` for progress bars
-
----
-
-## SGLang Commit Tracking & Verification
-
-### Primary Focus Files
-
-We only care about these files for SGLang benchmarking:
-
-- **`sglang_track_all.json`**: Master tracking file with all SGLang commits (JSONL format)
-- **`commit-status/success.txt`**: 16 commits with successful benchmarks
-- **`commit-status/failed/`**: Categorized failure lists by error type
-
-### Commit Verification Workflow
-
-For each commit, we do **case-by-case analysis** of:
-
-1. **`commit_hash`** (human/PR commit) - the performance change we're measuring
-2. **`parent_commit`** (baseline) - the commit before the PR, used for comparison
-
-For BOTH commits, verify:
-- Dockerfile exists and is correct (`has_dockerfile`, `dockerfile_path`, `dockerfile_content`)
-- The right commit is compiled into the Docker image
-- The build is pushed correctly to Docker Hub (`ayushnangia16/nvidia-sglang-docker:<commit_hash>`)
-
-### Commit Identity Inside Docker
-
-**CRITICAL**: Always embed commit identifiers in Docker images so we can verify the correct code is running:
-
-1. **Build-time label**: `--label org.opencontainers.image.revision=<commit_hash>`
-2. **Build-arg**: `--build-arg SGLANG_COMMIT=<commit_hash>`
-3. **Runtime proof file**: `/opt/sglang_commit.txt` containing the commit SHA
-4. **Dockerfile ARG**: `ARG SGLANG_COMMIT` injected after first FROM
-
-### Verification Script
-
-Use `verify_sglang_docker.py` to validate Docker images have correct commit-level installation:
-
-```bash
-# Verify a single commit
-python3 verify_sglang_docker.py 6b231325b9782555eb8e1cfcf27820003a98382b
-
-# Verify all commits from success_with_dockerfile.txt
-python3 verify_sglang_docker.py --all
-
-# Output as JSON
-python3 verify_sglang_docker.py --all --json
-```
-
-The script checks:
-1. **Image exists** locally
-2. **Commit file** `/opt/sglang_commit.txt` exists and matches expected SHA
-3. **SGLang installed** via pip (checks for editable install)
-4. **SGLang imports** successfully
-
-### Manual Verification Commands
-
-```bash
-# Check Docker image labels
-docker inspect ayushnangia16/nvidia-sglang-docker:<commit> | jq '.[0].Config.Labels'
-
-# Check commit proof inside container
-docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> cat /opt/sglang_commit.txt
-
-# Verify sglang is installed from local source (editable)
-docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> pip show sglang | grep -E "^(Version|Location|Editable)"
-
-# Test sglang import
-docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> python3 -c "import sglang; print('OK')"
-```
-
-### Why This Matters
-
-Since `parent_commit` and `commit_hash` are often just **1 commit apart**, if the Docker build doesn't properly pin to the exact commit, we could benchmark the WRONG code and have NO way to detect it. The verification workflow ensures:
-
-- Human commit image contains exactly the PR code
-- Parent commit image contains exactly the baseline code
-- Benchmarks are comparing the correct versions
+- Python 3 (optional: `tqdm` for progress bars)
