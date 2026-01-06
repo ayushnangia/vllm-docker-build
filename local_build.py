@@ -48,10 +48,11 @@ SGL_KERNEL_FROM_SOURCE_COMMITS = {
     "93470a14": ("2.5.1", "cu124"),   # sgl-kernel==0.0.8
 }
 
-# Commits that need torchao version fix (torchao 0.9.0 incompatible with torch 2.7.1)
-# torchao 0.12.0+ required for torch 2.7.1 per https://github.com/pytorch/ao/issues/2919
-TORCHAO_FIX_COMMITS = {
-    "a99801e0",  # has torchao==0.9.0 + torch==2.7.1 conflict
+# Commits that need dependency version fixes for torch 2.7.1 compatibility
+# - torchao 0.12.0+ required per https://github.com/pytorch/ao/issues/2919
+# - flashinfer 0.2.6.post1 required (0.2.7.post1 needs torch 2.9) per https://github.com/flashinfer-ai/flashinfer/issues/1139
+TORCH271_DEP_FIX_COMMITS = {
+    "a99801e0",  # has torchao==0.9.0 + flashinfer==0.2.7.post1 conflicts with torch==2.7.1
 }
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
@@ -395,19 +396,30 @@ RUN sed -i 's/"sgl-kernel==[^"]*"/"sgl-kernel"/g' /sgl-workspace/sglang/python/p
                     )
                     break
 
-        # Fix torchao version conflict (0.9.0 incompatible with torch 2.7.1)
+        # Fix torch 2.7.1 dependency conflicts (torchao + flashinfer)
         if commit_sha:
-            for prefix in TORCHAO_FIX_COMMITS:
+            for prefix in TORCH271_DEP_FIX_COMMITS:
                 if commit_sha.startswith(prefix):
-                    # Patch pyproject.toml to use torchao>=0.12.0 instead of 0.9.0
-                    torchao_fix = '''# Fix torchao version (0.9.0 incompatible with torch 2.7.1, need 0.12.0+)
-RUN sed -i 's/"torchao==0.9.0"/"torchao>=0.12.0"/g' /sgl-workspace/sglang/python/pyproject.toml
+                    # Patch pyproject.toml to fix version conflicts:
+                    # - torchao 0.9.0 -> 0.12.0+ (0.9.0 doesn't support torch 2.7.1)
+                    # - Remove flashinfer pin (no prebuilt wheels for torch 2.7.1, build from source)
+                    torch271_fix = '''# Fix dependency versions for torch 2.7.1 compatibility
+RUN sed -i 's/"torchao==0.9.0"/"torchao>=0.12.0"/g' /sgl-workspace/sglang/python/pyproject.toml && \\
+    sed -i 's/"flashinfer_python==0.2.7.post1",/# flashinfer built from source below/g' /sgl-workspace/sglang/python/pyproject.toml
+
+# Install torch first, then build flashinfer from source (no prebuilt wheels for torch 2.7.1 + cu126)
+RUN pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126 && \\
+    pip install ninja numpy && \\
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && \\
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install . && \\
+    rm -rf /tmp/flashinfer
 
 '''
                     # Insert after COPY . /sgl-workspace/sglang
                     new_text = re.sub(
                         r'(COPY \. /sgl-workspace/sglang\n)',
-                        r'\1' + torchao_fix,
+                        r'\1' + torch271_fix,
                         new_text,
                         count=1
                     )
