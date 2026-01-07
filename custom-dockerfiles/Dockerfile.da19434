@@ -1,4 +1,4 @@
-# Dockerfile for SGLang commit 9216b10678a036a1797e19693b0445c889016687
+# Dockerfile for SGLang parent commit da19434c2f3cbe4f367f84993da0bcbd84efb6ba
 # This uses the "Proper" Triton Server base image found in the repo at this time.
 # Architecture: linux/amd64 (GPU)
 
@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-ARG SGLANG_COMMIT=9216b10678a036a1797e19693b0445c889016687
+ARG SGLANG_COMMIT=da19434c2f3cbe4f367f84993da0bcbd84efb6ba
 
 WORKDIR /sgl-workspace
 
@@ -25,4 +25,4 @@ RUN pip install --upgrade pip && \
 RUN mkdir -p /opt && echo "$SGLANG_COMMIT" > /opt/sglang_commit.txt
 
 WORKDIR /sgl-workspace
-CMD ["python3", "-c", "import sglang; print('SGLang Triton-based loaded successfully')"]
+CMD ["python3", "-c", "import sglang; print('SGLang Triton-based parent loaded successfully')"]
