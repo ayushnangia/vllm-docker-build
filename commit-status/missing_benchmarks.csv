@@ -1,6 +1,4 @@
 commit_hash,parent_commit,subject,has_dockerfile,failure_reason
-021f76e4f49861b2e9ea9ccff06a46d577e3c548,777688b8929c877e4e28c2eac208d776abe4c3af,[Perf] Refactor LoRAManager to eliminate stream syncs and redundant computations  (#6994),yes,Dependency conflict: sglang 0.4.7 conflicting dependencies
-09deb20deef8181a23f66c933ea74b86fee47366,33b242df303e03886835d08a583fefe979a3ee88,Optimize the memory usage of logits processor (#420),no,No Dockerfile at this commit
 187b85b7f38496653948a2aba546d53c09ada0f3,ceba0ce4f661722198f6568a54ba20cf06b7e033,[PD] Optimize custom mem pool usage and bump mooncake version (#7393),yes,Torch version unavailable: flashinfer requires torch 2.9.x not available for CUDA 12.6
 1bf1cf195302fdff14a4321eb8a17831f5c2fc11,e822e5900b98d89d19e0a293d9ad384f4df2945a,Reduce overhead when `fork(1)` (#375),no,OTHER
 2a754e57b052e249ed4f8572cb6f0069ba6a495e,96c503eb6029d37f896e91466e23469378dfc3dc,2x performance improvement for large prefill & Fix workspace conflicts (#579),no,EMPTY METRICS
@@ -8,13 +6,6 @@ commit_hash,parent_commit,subject,has_dockerfile,failure_reason
 62757db6f0f09a6dff15b1ee1ac3029602951509,73fa2d49d539fd67548b0458a365528d3e3b6edc,Reduce the overhead when cache is disabled (#1010),yes,FLASHINFER ABI MISMATCH
 6a2941f4d037cb5fa7c927342dc7f09387c29ab0,5ac8b80677614a9c024740e94f9a087a39eb3499,Improve tensor parallel performance (#625),yes,Missing COPY step: Dockerfile installs before copying source
 6f560c761b2fc2f577682d0cfda62630f37a3bb0,cd6872334e9ead684049b8fccd5f2dac9433b1b4,Improve the control of streaming and improve the first token latency in streaming (#117),no,OTHER
-9216b10678a036a1797e19693b0445c889016687,da19434c2f3cbe4f367f84993da0bcbd84efb6ba,Improve performance when running with full parallel (#394),no,No Dockerfile at this commit
-9c088829ee2a28263f36d0814fde448c6090b5bc,005aad32ad45ce27d73fd39aa1f7e9ba5d8ebb8f,"Revert ""Use device_id in dist init to reduce NCCL communicator warmup & creation overhead"" (#5786)",yes,sgl-kernel==0.0.9.post2 not on PyPI (NEED GPU)
 a37e1247c183cff86a18f2ed1a075e40704b1c5e,136c6e0431c2067c3a2a98ad2c77fc89a9cb98e7,[Multimodal][Perf] Use `pybase64` instead of `base64` (#7724),yes,Torch version unavailable: flashinfer requires torch 2.9.x not available for CUDA 12.6
 a99801e0750f41553fedd02e36f58d835c4d4bd6,4c605235aa832f259e148dfbdce08d9e471b5099,[Performance][PD Disaggregation] optimize TokenToKVPoolAllocator by sorting free pages (#8133),yes,pip dependency conflict (sglang[srt]==0.4.9.post3) (idk hope no error)
-bb3a3b6675b1844a13ebe368ad693f3dc75b315b,45d6592d4053fe8b2b8dc9440f64c900de040d09,Support Faster JSON decoding for llava (#137),no,SERVER FAILED TO START
-d1112d8548eb13c842900b3a8d622345f9737759,48efec7b052354865aa2f0605a5bf778721f3cbb,"Add endpoint for file support, purely to speed up processing of input_embeds. (#2797)",yes,sgl-kernel==0.0.5.post2 not on PyPI (NEED GPU)
-da47621ccc4f8e8381f3249257489d5fe32aff1b,22a6b9fc051154347b6eb5064d2f6ef9b4dba471,Minor speedup topk postprocessing (#7058),yes,Dependency conflict: sglang 0.4.7 conflicting dependencies
-e3ec6bf4b65a50e26e936a96adc7acc618292002,b04df75acdda5b99999c02820e64b5b005c07159,Minor speed up block_quant_dequant (#6814),yes,Dependency conflict: sglang 0.4.7 conflicting dependencies
 e822e5900b98d89d19e0a293d9ad384f4df2945a,ca4f1ab89c0c9bdd80fdfabcec52968fbde108bb,Optimize radix tree matching (#364),no,EMPTY METRICS
-93470a14116a60fe5dd43f0599206e8ccabdc211,db452760e5b2378efd06b1ceb9385d2eeb6d217c,Refactor and Optimize FA3 Code (#5090),yes,sgl-kernel==0.0.8 not on PyPI (NEED GPU)

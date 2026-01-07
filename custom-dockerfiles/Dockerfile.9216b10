@@ -15,10 +15,21 @@ WORKDIR /sgl-workspace
 # Copy ONLY the source for this specific commit
 COPY . /sgl-workspace/sglang
 
+# Build flashinfer from source (old versions not on PyPI for Python 3.10)
+RUN pip install --upgrade pip && \
+    pip install ninja numpy && \
+    pip install torch==2.2.1 --extra-index-url https://download.pytorch.org/whl/cu121 && \
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
+    cd /tmp/flashinfer && git checkout v0.1.2 && \
+    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip install --no-build-isolation . && \
+    rm -rf /tmp/flashinfer
+
+# Patch pyproject.toml to skip flashinfer install (already built)
+RUN sed -i 's/"flashinfer[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml
+
 # Install SGLang package and datasets (matching the repo's Triton Dockerfile)
 WORKDIR /sgl-workspace/sglang
-RUN pip install --upgrade pip && \
-    pip install -e "python[all]" && \
+RUN pip install -e "python[all]" && \
     pip install datasets
 
 # Write commit hash for verification

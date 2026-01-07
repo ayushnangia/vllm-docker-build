@@ -40,14 +40,24 @@ FLASHINFER_FROM_SOURCE_COMMITS = {
     "73b13e69", "8609e637", "880221bd", "8f3173d0",
 }
 
+# Commits with flashinfer ABI mismatch - wheel torch version doesn't match installed torch
+# Fix: replace flashinfer wheel install with build from source
+FLASHINFER_ABI_FIX_COMMITS = {
+    "62757db6",  # SGLang 0.2.11, vllm 0.5.4 - flashinfer torch2.4 wheel ABI mismatch
+    "73fa2d49",  # parent of 62757db6
+}
+
 # Triton-style commits (examples/usage/triton/Dockerfile) that need flashinfer from source
 # These are old v0.1.14-v0.1.17 commits where flashinfer>=0.0.4 is no longer on PyPI
 TRITON_FLASHINFER_FROM_SOURCE_COMMITS = {
     "09deb20d",  # v0.1.14
+    "33b242df",  # v0.1.14 (parent of 09deb20d)
     "1bf1cf19",  # v0.1.14
     "2a754e57",  # v0.1.17
     "9216b106",  # v0.1.14
     "e822e590",  # v0.1.14
+    "ca4f1ab8",  # v0.1.14 (parent of e822e590)
+    "96c503eb",  # v0.1.17 (parent of 2a754e57)
 }
 
 # Commits that need sgl-kernel built from source (version on PyPI doesn't exist)
@@ -65,16 +75,39 @@ TORCH271_DEP_FIX_COMMITS = {
     "a99801e0",  # has torchao==0.9.0 + flashinfer==0.2.7.post1 conflicts with torch==2.7.1
 }
 
+# SGLang 0.4.7+ commits with flashinfer 0.2.6.post1/0.2.7.post1 (requires torch 2.9.x which doesn't exist)
+# Fix: build flashinfer v0.2.6 from source with torch 2.6.0
+SGLANG_047_FLASHINFER_FIX_COMMITS = {
+    "021f76e4",  # [Perf] Refactor LoRAManager
+    "da47621c",  # Minor speedup topk postprocessing
+    "e3ec6bf4",  # Minor speed up block_quant_dequant
+    # Parent commits (same sglang version, same issue)
+    "777688b8",  # parent of 021f76e4
+    "22a6b9fc",  # parent of da47621c
+    "b04df75a",  # parent of e3ec6bf4
+    # SGLang 0.4.7.post1 with flashinfer 0.2.6.post1
+    "187b85b7",  # [PD] Optimize custom mem pool usage
+    "ceba0ce4",  # parent of 187b85b7
+    # SGLang 0.4.9 with flashinfer 0.2.7.post1
+    "a37e1247",  # [Multimodal][Perf] Use pybase64
+    "136c6e04",  # parent of a37e1247
+}
+
 # Legacy commit configuration for early SGLang (early 2024)
 # Maps commit prefix -> {base_image, torch_version, extra_pip_flags}
 LEGACY_CONFIG = {
     "6f560c76": {"base": "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel", "torch": "2.1.2"},
     "bb3a3b66": {"base": "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel", "torch": "2.1.2"},
+    "45d6592d": {"base": "pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel", "torch": "2.1.2"},  # parent of bb3a3b66
     "09deb20d": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},
+    "33b242df": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},  # parent of 09deb20d
     "1bf1cf19": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},
     "2a754e57": {"base": "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel", "torch": "2.3.0"},
+    "96c503eb": {"base": "pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel", "torch": "2.3.0"},  # parent of 2a754e57
     "9216b106": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},
+    "da19434c": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},  # parent of 9216b106
     "e822e590": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},
+    "ca4f1ab8": {"base": "pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel", "torch": "2.2.1"},  # parent of e822e590
 }
 
 def run_command(command: List[str], cwd: Optional[Path] = None) -> Tuple[int, str, str]:
@@ -282,11 +315,11 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path, commit_sha: str = "")
             new_text = new_text.replace("pip install .", "python3 -m pip install --no-build-isolation .")
             new_text = new_text.replace("pip3 install .", "python3 -m pip install --no-build-isolation .")
             # Limit jobs to prevent OOM
-            new_text = new_text.replace("python3 -m pip install --no-build-isolation .", "MAX_JOBS=4 python3 -m pip install --no-build-isolation .")
+            new_text = new_text.replace("python3 -m pip install --no-build-isolation .", "MAX_JOBS=64 python3 -m pip install --no-build-isolation .")
 
         new_text = new_text.replace("git apply /sgl-workspace/DeepEP/third-party/nvshmem.patch", "git apply /sgl-workspace/DeepEP/third-party/nvshmem.patch || true")
         new_text = new_text.replace("sed -i '1i#include <unistd.h>' examples/moe_shuffle.cu", "find . -name \"*.cu\" -o -name \"*.cpp\" -o -name \"*.h\" | xargs sed -i '1i#include <unistd.h>' || true")
-        new_text = new_text.replace("cmake --build build --target install -j", "cmake --build build --target install -j4")
+        new_text = new_text.replace("cmake --build build --target install -j", "cmake --build build --target install -j64")
 
         # 7) SGLang-specific fixes: Use build context instead of git clone or PyPI
         # This ensures we build the exact commit, not latest master or PyPI version
@@ -295,19 +328,30 @@ def _apply_generic_dockerfile_fixes(dockerfile_path: Path, commit_sha: str = "")
         # This pattern installs whatever is on PyPI, not the archived commit!
         if 'pip' in new_text and '"sglang[all]"' in new_text and 'COPY' not in new_text:
             # Replace PyPI install with local source install
+            # Patch pyproject.toml to remove vllm/xformers (already in vllm base image)
+            # Then install sglang normally
             new_text = re.sub(
                 r'pip3?\s+(?:--no-cache-dir\s+)?install\s+"sglang\[all\]"',
-                'pip3 --no-cache-dir install -e "/sgl-workspace/sglang/python[all]"',
+                'sed -i \'s/"vllm[^"]*",//g; s/"xformers[^"]*",//g\' /sgl-workspace/sglang/python/pyproject.toml && pip3 --no-cache-dir install -e "/sgl-workspace/sglang/python[all]"',
                 new_text
             )
             # Add COPY command before the install if not present
             if 'COPY . /sgl-workspace/sglang' not in new_text and 'COPY python' not in new_text:
-                # Insert COPY after WORKDIR
-                new_text = re.sub(
-                    r'(WORKDIR\s+/sgl-workspace\s*\n)',
-                    r'\1\n# Copy archived commit source (not PyPI)\nCOPY . /sgl-workspace/sglang\n',
-                    new_text
-                )
+                # Try to insert COPY after WORKDIR first
+                if 'WORKDIR /sgl-workspace' in new_text:
+                    new_text = re.sub(
+                        r'(WORKDIR\s+/sgl-workspace\s*\n)',
+                        r'\1\n# Copy archived commit source (not PyPI)\nCOPY . /sgl-workspace/sglang\n',
+                        new_text
+                    )
+                else:
+                    # No WORKDIR - insert WORKDIR + COPY after FROM line (handles vllm/vllm-openai base)
+                    new_text = re.sub(
+                        r'(FROM\s+[^\n]+\n)',
+                        r'\1\nWORKDIR /sgl-workspace\n# Copy archived commit source (not PyPI)\nCOPY . /sgl-workspace/sglang\n\n',
+                        new_text,
+                        count=1
+                    )
 
         if "sgl-project/sglang" in new_text:
             # The SGLang Dockerfile typically has a RUN command like:
@@ -381,7 +425,7 @@ RUN pip install ninja numpy && \\
     pip install torch=={torch_ver} --extra-index-url https://download.pytorch.org/whl/cu121 && \\
     git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
     cd /tmp/flashinfer && git checkout v0.1.2 && \\
-    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install . && \\
+    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip install . && \\
     rm -rf /tmp/flashinfer
 
 # Patch pyproject.toml to skip flashinfer install (already built)
@@ -412,7 +456,7 @@ RUN sed -i 's/"flashinfer[^"]*",*//g' sglang/python/pyproject.toml
 RUN pip install torch==2.7.1 ninja numpy --extra-index-url https://download.pytorch.org/whl/cu126 && \\
     git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
     cd /tmp/flashinfer && git checkout v0.2.6.post1 && \\
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install --no-build-isolation --no-deps -v . && \\
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip install --no-build-isolation --no-deps -v . && \\
     rm -rf /tmp/flashinfer
 
 # Remove flashinfer from pyproject.toml deps (already built from source)
@@ -470,7 +514,7 @@ RUN pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126 
     pip install ninja numpy && \\
     git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
     cd /tmp/flashinfer && \\
-    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=4 pip install . && \\
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip install . && \\
     rm -rf /tmp/flashinfer
 
 '''
@@ -480,6 +524,59 @@ RUN pip install torch==2.7.1 --index-url https://download.pytorch.org/whl/cu126 
                         r'\1' + torch271_fix,
                         new_text,
                         count=1
+                    )
+                    break
+
+        # Fix SGLang 0.4.7 commits with flashinfer 0.2.6.post1 (requires torch 2.9.x which doesn't exist)
+        # Solution: Build flashinfer from source at v0.2.6 tag (compatible with torch 2.7.x)
+        if commit_sha:
+            for prefix in SGLANG_047_FLASHINFER_FIX_COMMITS:
+                if commit_sha.startswith(prefix):
+                    sglang047_fix = '''# Fix flashinfer version (0.2.6.post1 requires torch 2.9.x which doesn't exist)
+# Remove flashinfer from deps and build from source at v0.2.6 tag
+# Also pin torch to prevent upgrade after flashinfer build (ABI compatibility)
+RUN sed -i 's/"flashinfer_python[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml && \\
+    sed -i 's/"flashinfer-python[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml && \\
+    sed -i 's/"torch[^"]*",*/"torch==2.6.0",/g' /sgl-workspace/sglang/python/pyproject.toml
+
+# Build flashinfer from source (v0.2.6 requires torch 2.6.x)
+RUN pip install --break-system-packages torch==2.6.0 --index-url https://download.pytorch.org/whl/cu124 && \\
+    pip install --break-system-packages ninja numpy && \\
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && git checkout v0.2.6 && \\
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip install --break-system-packages --no-build-isolation . && \\
+    rm -rf /tmp/flashinfer
+
+'''
+                    # Insert after COPY . /sgl-workspace/sglang
+                    new_text = re.sub(
+                        r'(COPY \. /sgl-workspace/sglang\n)',
+                        r'\1' + sglang047_fix,
+                        new_text,
+                        count=1
+                    )
+                    break
+
+        # Fix flashinfer ABI mismatch - replace wheel install with source build
+        # This happens when flashinfer wheel is for different torch version than what vllm installs
+        if commit_sha:
+            for prefix in FLASHINFER_ABI_FIX_COMMITS:
+                if commit_sha.startswith(prefix):
+                    # Replace flashinfer wheel install with source build
+                    # Pattern: pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
+                    flashinfer_source_build = '''
+# Build flashinfer from source (avoid ABI mismatch with torch version)
+RUN pip3 --no-cache-dir install ninja numpy && \\
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && git checkout v0.1.6 && \\
+    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip3 install --no-build-isolation . && \\
+    rm -rf /tmp/flashinfer
+'''
+                    # Remove the flashinfer wheel install line
+                    new_text = re.sub(
+                        r'RUN pip3?\s+--no-cache-dir\s+install\s+flashinfer\s+-i\s+https://flashinfer\.ai/whl/[^\n]+\n',
+                        flashinfer_source_build,
+                        new_text
                     )
                     break
 

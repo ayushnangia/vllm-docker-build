@@ -5,3 +5,4 @@
 .buildx-cache/
 vllm/
 sglang/
+.env

@@ -29,6 +29,16 @@ RUN pip3 install torch==2.1.2 torchvision==0.16.2 --index-url https://download.p
 WORKDIR /sgl-workspace
 COPY . /sgl-workspace/sglang
 
+# Build flashinfer from source (old versions not on PyPI for Python 3.10)
+RUN pip3 install ninja numpy && \
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
+    cd /tmp/flashinfer && git checkout v0.1.2 && \
+    cd python && TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=64 pip3 install --no-build-isolation . && \
+    rm -rf /tmp/flashinfer
+
+# Patch pyproject.toml to skip flashinfer install (already built)
+RUN sed -i 's/"flashinfer[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml
+
 # Install SGLang package
 WORKDIR /sgl-workspace/sglang
 RUN pip3 install -e "python[all]"
