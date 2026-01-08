@@ -49,15 +49,21 @@ FLASHINFER_ABI_FIX_COMMITS = {
 
 # Triton-style commits (examples/usage/triton/Dockerfile) that need flashinfer from source
 # These are old v0.1.14-v0.1.17 commits where flashinfer>=0.0.4 is no longer on PyPI
+# NOTE: Only includes commits AFTER flashinfer v0.0.1 release (Jan 31, 2024)
 TRITON_FLASHINFER_FROM_SOURCE_COMMITS = {
-    "09deb20d",  # v0.1.14
+    "09deb20d",  # v0.1.14 (Feb 2024 - needs flashinfer>=0.0.4)
     "33b242df",  # v0.1.14 (parent of 09deb20d)
-    "1bf1cf19",  # v0.1.14
-    "2a754e57",  # v0.1.17
-    "9216b106",  # v0.1.14
-    "e822e590",  # v0.1.14
-    "ca4f1ab8",  # v0.1.14 (parent of e822e590)
-    "96c503eb",  # v0.1.17 (parent of 2a754e57)
+    "9216b106",  # v0.1.14 (Feb 2024 - needs flashinfer)
+}
+
+# Pre-flashinfer commits (Jan 30, 2024 - BEFORE flashinfer v0.0.1 release on Jan 31, 2024)
+# These commits don't require flashinfer at all - their pyproject.toml doesn't list it
+PRE_FLASHINFER_TRITON_COMMITS = {
+    "1bf1cf19",  # v0.1.14 (Jan 30, 2024)
+    "2a754e57",  # v0.1.17 (Jan 30, 2024)
+    "e822e590",  # v0.1.14 (Jan 30, 2024)
+    "ca4f1ab8",  # v0.1.14 (Jan 30, 2024, parent of e822e590)
+    "96c503eb",  # v0.1.17 (Jan 30, 2024, parent of 2a754e57)
 }
 
 # Commits that need sgl-kernel built from source (version on PyPI doesn't exist)
