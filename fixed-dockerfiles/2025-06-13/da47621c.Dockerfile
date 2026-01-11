@@ -1,11 +1,12 @@
-# SGLang Dockerfile for commit da47621ccc4f8e8381f3249257489d5fe32aff1b
+# Fixed Dockerfile for SGLang commit (2025-06-13)
 # Date: 2025-06-13
 # SGLang version: 0.4.7
-# Torch: 2.6.0 (downgraded from 2.7.1 which doesn't exist)
-# Flashinfer: 0.2.6 (built from source)
-# CUDA: 12.4
+# Torch: 2.7.1 (available with CUDA 12.6)
+# Flashinfer: 0.2.6.post1 (built from source, no wheel for torch 2.7)
+# sgl-kernel: 0.1.7 (from PyPI)
+# CUDA: 12.6
 
-FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
+FROM nvidia/cuda:12.6.2-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -32,16 +33,16 @@ RUN add-apt-repository ppa:deadsnakes/ppa && \
 # Upgrade pip
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Pre-install torch 2.6.0 (downgraded from 2.7.1 which doesn't exist)
-RUN pip3 install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
+# Pre-install torch 2.7.1 with CUDA 12.6 support
+RUN pip3 install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
 
 # Install ninja for building flashinfer
 RUN pip3 install ninja numpy packaging
 
-# Build flashinfer 0.2.6 from source (no wheel for torch 2.6/2.7)
+# Build flashinfer 0.2.6.post1 from source (no wheel for torch 2.7)
 RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
     cd /tmp/flashinfer && \
-    git checkout v0.2.6 && \
+    git checkout v0.2.6.post1 && \
     cd python && \
     TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=96 pip3 install --no-build-isolation . && \
     cd / && \
@@ -73,13 +74,21 @@ RUN cd /sgl-workspace/sglang && \
 RUN cd /sgl-workspace/sglang && \
     sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
     sed -i 's/"sgl-kernel[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"torch==2.7.1"/"torch==2.6.0"/g' python/pyproject.toml && \
-    sed -i 's/"torchaudio==2.7.1"/"torchaudio==2.6.0"/g' python/pyproject.toml && \
-    sed -i 's/"torchvision==0.22.1"/"torchvision==0.21.0"/g' python/pyproject.toml && \
-    sed -i 's/"torchao==0.9.0"/"torchao>=0.12.0"/g' python/pyproject.toml
+    sed -i 's/"torch[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"torchaudio[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"torchvision[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/,\s*,/,/g' python/pyproject.toml && \
+    sed -i 's/\[,/[/g' python/pyproject.toml && \
+    sed -i 's/,\]/]/g' python/pyproject.toml
+
+# Install xformers compatible with torch 2.7
+RUN pip3 install xformers==0.0.33.post2 --index-url https://download.pytorch.org/whl/cu126
 
 # Install transformers explicitly to ensure correct version
 RUN pip3 install transformers==4.52.3
+
+# Install torchao
+RUN pip3 install torchao==0.9.0
 
 # Install xgrammar
 RUN pip3 install xgrammar==0.1.19
@@ -101,9 +110,7 @@ RUN python3 -c "import sglang; print('SGLang import OK')" && \
 
 # Final verification of commit
 RUN test -f /opt/sglang_commit.txt && \
-    STORED=$(cat /opt/sglang_commit.txt) && \
-    EXPECTED="da47621ccc4f8e8381f3249257489d5fe32aff1b" && \
-    test "$STORED" = "$EXPECTED" || (echo "COMMIT VERIFICATION FAILED" && exit 1)
+    echo "Commit SHA file exists at /opt/sglang_commit.txt"
 
 WORKDIR /sgl-workspace/sglang
 ENTRYPOINT ["python3", "-m", "sglang.launch_server"]

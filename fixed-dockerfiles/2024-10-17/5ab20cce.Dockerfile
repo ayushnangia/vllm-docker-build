@@ -1,82 +1,160 @@
 # Base image for torch 2.4.x with CUDA 12.1
 FROM nvidia/cuda:12.1.1-devel-ubuntu20.04
 
+# Prevent interactive prompts during build
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    git curl wget \
-    build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
-    libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev \
-    libibverbs-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Set up timezone
+RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections && \
+    echo 'tzdata tzdata/Zones/America select Los_Angeles' | debconf-set-selections
 
-# Build Python 3.10 from source (deadsnakes PPA is broken on Ubuntu 20.04)
-RUN wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz \
-    && tar -xf Python-3.10.14.tgz \
-    && cd Python-3.10.14 \
-    && ./configure --enable-optimizations --enable-shared \
-    && make -j$(nproc) \
-    && make altinstall \
-    && ldconfig \
-    && ln -sf /usr/local/bin/python3.10 /usr/bin/python3 \
-    && ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 \
-    && cd .. && rm -rf Python-3.10.14*
+# Install system dependencies for Python build
+RUN apt-get update -y && \
+    apt-get install -y \
+        git curl wget \
+        build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
+        libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev \
+        libibverbs-dev \
+        cmake ninja-build && \
+    rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
+# Build Python 3.10 from source (deadsnakes PPA deprecated on Ubuntu 20.04)
+RUN wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz && \
+    tar -xf Python-3.10.14.tgz && \
+    cd Python-3.10.14 && \
+    ./configure --enable-optimizations --enable-shared && \
+    make -j$(nproc) && \
+    make altinstall && \
+    ldconfig && \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 && \
+    cd .. && rm -rf Python-3.10.14*
 
-# Pre-install torch 2.4.1 with CUDA 12.1
-RUN pip3 install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
+# Verify Python version
+RUN python3 --version && python3 -m pip --version
 
-# Install flashinfer from wheel (available for torch 2.4 + CUDA 12.1)
+# Upgrade pip and install build tools
+RUN python3 -m pip install --upgrade pip setuptools wheel packaging
+
+# Set working directory
+WORKDIR /sgl-workspace
+
+# CRITICAL: Install torch 2.4.0 FIRST with CUDA 12.1 (required by vLLM 0.5.5)
+RUN pip3 install torch==2.4.0 --index-url https://download.pytorch.org/whl/cu121
+
+# Install numpy < 2.0.0 before other packages to avoid conflicts
+RUN pip3 install "numpy<2.0.0"
+
+# Install vLLM 0.5.5 WITHOUT dependencies to avoid torch conflicts
+RUN pip3 install vllm==0.5.5 --no-deps
+
+# Install vLLM dependencies from requirements-common.txt and requirements-cuda.txt
+# Based on exploration of vLLM v0.5.5 requirements
+RUN pip3 install \
+    "psutil" \
+    "sentencepiece" \
+    "requests" \
+    "tqdm" \
+    "py-cpuinfo" \
+    "transformers>=4.43.2" \
+    "tokenizers>=0.19.1" \
+    "protobuf" \
+    "fastapi" \
+    "aiohttp" \
+    "openai>=1.0" \
+    "uvicorn[standard]" \
+    "pydantic>=2.8" \
+    "pillow" \
+    "prometheus_client>=0.18.0" \
+    "prometheus-fastapi-instrumentator>=7.0.0" \
+    "tiktoken>=0.6.0" \
+    "lm-format-enforcer==0.10.6" \
+    "outlines>=0.0.43,<0.1" \
+    "typing_extensions>=4.10" \
+    "filelock>=3.10.4" \
+    "pyzmq" \
+    "msgspec" \
+    "librosa" \
+    "soundfile" \
+    "gguf==0.9.1" \
+    "importlib_metadata" \
+    "ray>=2.9" \
+    "nvidia-ml-py" \
+    "torchvision==0.19"
+
+# Install xformers 0.0.27.post2 for torch 2.4.0 compatibility
+RUN pip3 install xformers==0.0.27.post2 --index-url https://download.pytorch.org/whl/cu121
+
+# Install vllm-flash-attn
+RUN pip3 install vllm-flash-attn==2.6.1
+
+# Install flashinfer from wheels (available for torch 2.4 + CUDA 12.1)
 RUN pip3 install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
 
-# Install vLLM 0.5.5 as specified in pyproject.toml
-RUN pip3 install vllm==0.5.5
+# Install sgl-kernel from PyPI (using version appropriate for October 2024)
+RUN pip3 install sgl-kernel==0.3.14
 
-# HARDCODE the commit SHA (occurrence 1/3)
+# Clone SGLang at the EXACT commit (HARDCODED SHA - 1st occurrence)
 ENV SGLANG_COMMIT=5ab20cceba227479bf5088a3fc95b1b4fe0ac3a9
 
-# Clone SGLang and checkout EXACT commit (occurrence 2/3 - hardcoded SHA)
-WORKDIR /sgl-workspace
+# Clone and checkout the specific commit (HARDCODED SHA - 2nd occurrence)
 RUN git clone https://github.com/sgl-project/sglang.git sglang && \
     cd sglang && \
     git checkout 5ab20cceba227479bf5088a3fc95b1b4fe0ac3a9
 
-# VERIFY commit - compare against HARDCODED value (occurrence 3/3)
+# Verify we have the correct commit (HARDCODED SHA - 3rd occurrence)
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="5ab20cceba227479bf5088a3fc95b1b4fe0ac3a9" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
+    test "$ACTUAL" = "$EXPECTED" || (echo "COMMIT MISMATCH: got $ACTUAL, expected $EXPECTED" && exit 1) && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove vllm since we pre-installed it
-RUN sed -i 's/"vllm[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml && \
-    sed -i 's/"torch",*//g' /sgl-workspace/sglang/python/pyproject.toml
+# Patch pyproject.toml to remove already-installed dependencies
+RUN cd /sgl-workspace/sglang && \
+    sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"sgl-kernel[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"torch",*//g' python/pyproject.toml && \
+    sed -i 's/,\s*,/,/g' python/pyproject.toml && \
+    sed -i 's/\[,/[/g' python/pyproject.toml && \
+    sed -i 's/,\]/]/g' python/pyproject.toml
 
-# Install SGLang from source
-WORKDIR /sgl-workspace/sglang
-RUN cd python && pip3 install -e ".[all]"
+# Install SGLang runtime common dependencies
+RUN pip3 install \
+    "decord" \
+    "hf_transfer" \
+    "huggingface_hub" \
+    "interegular" \
+    "orjson" \
+    "packaging" \
+    "python-multipart" \
+    "torchao" \
+    "uvloop" \
+    "modelscope"
 
-# Install triton-nightly to avoid conflicts
-RUN pip3 uninstall -y triton triton-nightly || true \
-    && pip3 install --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+# Install SGLang (pyproject.toml is in python/ subdirectory)
+RUN cd /sgl-workspace/sglang && \
+    pip3 install -e "python[all]"
 
-# Verify installation
-RUN python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import flashinfer; print('Flashinfer import OK')" && \
-    python3 -c "import vllm; print('vLLM import OK')"
+# For MiniCPM models
+RUN pip3 install datamodel_code_generator
 
 # Clear pip cache
-RUN pip3 cache purge
+RUN python3 -m pip cache purge
 
-WORKDIR /sgl-workspace/sglang
+# Final verification that everything works
+RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
+    python3 -c "import sglang; print('SGLang import OK')" && \
+    python3 -c "import flashinfer; print('flashinfer import OK')" && \
+    python3 -c "import vllm; print('vLLM import OK')" && \
+    python3 -c "import xformers; print(f'xformers: {xformers.__version__}')"
 
-# Set environment to interactive for runtime
+# Reset environment
 ENV DEBIAN_FRONTEND=interactive
 
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Set working directory
+WORKDIR /sgl-workspace/sglang
+
+# Set default command
+CMD ["/bin/bash"]
