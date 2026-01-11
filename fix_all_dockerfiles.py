@@ -60,138 +60,135 @@ def get_dockerfile_path(commit_sha: str, pr_date: str) -> Path:
 def build_claude_prompt(commit_sha: str, pr_date: str, pyproject_content: str, dockerfile_content: str) -> str:
     """Build the prompt for Claude."""
     short_hash = commit_sha[:8]
-    return f'''You are fixing an SGLang Dockerfile. DISCOVER versions by exploring repos - NEVER guess.
+    return f'''You are fixing an SGLang Dockerfile for commit {commit_sha} (date: {pr_date}).
 
-## TASK: Fix Dockerfile for commit {commit_sha} (date: {pr_date})
+## CORE PRINCIPLE: DISCOVER EVERYTHING VIA WEB SEARCHES
 
-## CORE PRINCIPLE: DISCOVER, Don't Guess
-
-**NEVER use hardcoded version tables.** Always explore the actual repositories to discover compatible versions.
+**NEVER guess versions. NEVER use hardcoded tables.**
+You MUST use WebFetch and WebSearch extensively to discover:
+1. What versions existed at the commit date
+2. What each package's dependencies are
+3. Whether packages are compatible with each other
 
 ---
 
-## STEP 0: EXPLORE THE ACTUAL REPOS (MANDATORY - DO THIS FIRST)
+## STEP 0: DISCOVER DEPENDENCY REQUIREMENTS FROM PYPI (MANDATORY)
 
-Before writing ANY Dockerfile, you MUST clone and explore repos to discover dependencies.
+For EACH key package (outlines, pydantic, fastapi, typing_extensions), you MUST:
 
-### 0a. Setup unique temp directory (parallel-safe)
+### 0a. Check PyPI release history to find versions from the commit era
+```
+WebFetch https://pypi.org/project/outlines/#history
+WebFetch https://pypi.org/project/pydantic/#history
+WebFetch https://pypi.org/project/fastapi/#history
+WebFetch https://pypi.org/project/typing-extensions/#history
+```
+
+### 0b. CRITICAL: Check what pydantic version outlines requires
+For example, if pyproject.toml says outlines==0.0.39:
+```
+WebFetch https://pypi.org/project/outlines/0.0.39/
+```
+Look at the "Requires" section - does it need pydantic v1 or v2?
+
+### 0c. Check for known breaking changes
+```
+WebSearch "fastapi pydantic v2 migration version"
+WebSearch "fastapi 0.126 pydantic requirement"
+WebSearch "typing_extensions Sentinel version"
+```
+
+Key facts to discover:
+- FastAPI >= 0.126.0 FORCES pydantic v2 (drops v1 support)
+- typing_extensions.Sentinel was added in version 4.14.0 (June 2025)
+- If you see Sentinel errors, your typing_extensions is too new
+
+### 0d. Find the RIGHT pydantic version for the era
+If outlines needs pydantic v2, find pydantic 2.x from that era:
+```
+WebFetch https://pypi.org/project/pydantic/2.7.1/
+```
+Check release date - pydantic 2.7.1 is April 23, 2024.
+
+---
+
+## STEP 1: EXPLORE ACTUAL REPOS
+
+### 1a. Setup temp directory
 ```bash
 WORK_DIR="/tmp/explore-{short_hash}"
 rm -rf "$WORK_DIR" && mkdir -p "$WORK_DIR" && cd "$WORK_DIR"
 ```
 
-### 0b. Clone and explore SGLang at this exact commit
+### 1b. Clone SGLang at this commit
 ```bash
 git clone https://github.com/sgl-project/sglang.git sglang
 cd sglang && git checkout {commit_sha}
-
-# Find pyproject.toml location
-find . -name "pyproject.toml" | head -5
-cat python/pyproject.toml 2>/dev/null || cat pyproject.toml
-
-# RECORD what you find:
-# - torch version (in [project.optional-dependencies] srt section)
-# - vllm version
-# - flashinfer version
-# - sgl-kernel version
-# - transformers version
-# - pydantic version requirements
+cat python/pyproject.toml
 ```
 
-### 0c. Clone vLLM at required version and read its ACTUAL requirements
+### 1c. Clone vLLM at required version
 ```bash
 cd "$WORK_DIR"
-# Replace VERSION with what you found in SGLang's pyproject.toml
-VLLM_VERSION="v0.4.2"  # CHANGE THIS based on pyproject.toml
-git clone --depth 1 --branch $VLLM_VERSION https://github.com/vllm-project/vllm.git vllm
-
-# Read vLLM's ACTUAL requirements - this is the source of truth
-cat vllm/requirements-cuda.txt 2>/dev/null
-cat vllm/requirements-common.txt 2>/dev/null
-cat vllm/requirements.txt 2>/dev/null
-cat vllm/pyproject.toml 2>/dev/null | head -100
-
-# RECORD what vLLM actually needs:
-# - torch version range
-# - xformers version
-# - pydantic version (v1.x or v2.x?)
-# - other critical deps
+# Use version from SGLang's pyproject.toml
+git clone --depth 1 --branch v<VERSION> https://github.com/vllm-project/vllm.git vllm
+cat vllm/requirements*.txt
+cat vllm/pyproject.toml | head -100
 ```
 
-### 0d. Check xformers compatibility (from vLLM requirements or releases)
-```bash
-# If vLLM requirements specify xformers, use that
-# Otherwise clone xformers to check torch compatibility
-git clone --depth 1 https://github.com/facebookresearch/xformers.git xformers
-cat xformers/requirements.txt
-```
-
-### 0e. Read the guidelines file
-```
-Read the file: DOCKERFILE_FIX_GUIDELINES.md
-```
-
-### 0f. Cleanup after exploration
+### 1d. Cleanup
 ```bash
 rm -rf "$WORK_DIR"
 ```
 
 ---
 
-## FULL COMMIT SHA (HARDCODE this EXACT 40-char value in 3 places):
-{commit_sha}
+## STEP 2: CHECK WHEEL AVAILABILITY
 
-## pyproject.toml at this commit (for reference):
-```toml
-{pyproject_content}
+### flashinfer wheels
 ```
-
-## Current Dockerfile (reference only):
-```dockerfile
-{dockerfile_content}
+WebFetch https://flashinfer.ai/whl/cu121/torch2.3/
 ```
-
----
-
-## STEP 1: WEB SEARCHES TO VERIFY AVAILABILITY
-
-After exploring repos, verify package availability:
-
-### Check flashinfer wheels
-WebFetch the URL matching your torch/CUDA (e.g., https://flashinfer.ai/whl/cu121/torch2.3/)
 If empty/404 → BUILD FROM SOURCE
 
-### Check sgl-kernel on PyPI
+### sgl-kernel on PyPI
+```
 WebFetch https://pypi.org/simple/sgl-kernel/
+```
 If version not found → BUILD FROM SOURCE
-
-### Check torch wheel exists
-WebFetch https://download.pytorch.org/whl/cu121/ or cu124/
 
 ---
 
-## STEP 2: WRITE DOCKERFILE USING DISCOVERED VERSIONS
+## STEP 3: BUILD CONSTRAINTS FILE WITH DISCOVERED VERSIONS
 
-### Base image (from torch version you discovered):
+Create a constraints file with versions YOU discovered from PyPI:
+
+```dockerfile
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for {pr_date} era
+fastapi==<VERSION_YOU_FOUND_ON_PYPI>
+uvicorn==<VERSION_YOU_FOUND_ON_PYPI>
+pydantic==<VERSION_YOU_FOUND_ON_PYPI>  # v1 or v2 based on outlines requirement!
+typing_extensions==<VERSION_YOU_FOUND_ON_PYPI>  # BEFORE 4.14 to avoid Sentinel
+outlines==<VERSION_FROM_PYPROJECT>
+pyzmq==<VERSION_YOU_FOUND_ON_PYPI>
+EOF
+```
+
+---
+
+## STEP 4: WRITE DOCKERFILE
+
+### Base image:
 - torch 2.1.x-2.3.x: pytorch/pytorch:VERSION-cuda12.1-cudnn8-devel
 - torch 2.4.x-2.5.x: nvidia/cuda:12.1.1-devel-ubuntu20.04
 - torch 2.6.x+: nvidia/cuda:12.4.1-devel-ubuntu22.04
 
-### CRITICAL: vLLM with --no-deps
+### Install vLLM with --no-deps:
 ```dockerfile
-# WRONG - vLLM will pull wrong torch:
-RUN pip install vllm==X.X.X
-
-# CORRECT - use --no-deps, then install deps from your exploration:
-RUN pip install vllm==X.X.X --no-deps
-RUN pip install <deps-from-vllm-requirements.txt-you-discovered>
+RUN pip install vllm==<VERSION> --no-deps
+RUN pip install -c /opt/constraints.txt <DEPS_FROM_VLLM_REQUIREMENTS>
 ```
-
-### Install deps from YOUR DISCOVERY (not hardcoded tables)
-Use the versions you found in vLLM's requirements.txt:
-- xformers version from vLLM requirements
-- pydantic version from vLLM requirements (v1.x or v2.x)
-- other deps from vLLM requirements
 
 ### HARDCODE commit SHA in EXACTLY 3 places:
 ```dockerfile
@@ -199,33 +196,41 @@ Use the versions you found in vLLM's requirements.txt:
 ENV SGLANG_COMMIT={commit_sha}
 
 # 2nd: git checkout
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \\
+RUN git clone https://github.com/sgl-project/sglang.git && \\
     cd sglang && git checkout {commit_sha}
 
 # 3rd: verification
 RUN cd /sgl-workspace/sglang && \\
     ACTUAL=$(git rev-parse HEAD) && \\
     EXPECTED="{commit_sha}" && \\
-    test "$ACTUAL" = "$EXPECTED" || (echo "COMMIT MISMATCH" && exit 1) && \\
+    test "$ACTUAL" = "$EXPECTED" || exit 1 && \\
     echo "$ACTUAL" > /opt/sglang_commit.txt
 ```
 
-### Patch pyproject.toml to remove pre-installed deps:
+### Install SGLang with --no-deps:
 ```dockerfile
-RUN cd /sgl-workspace/sglang && \\
-    sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \\
-    sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \\
-    sed -i 's/"sgl-kernel[^"]*",*//g' python/pyproject.toml
-```
-
-### Install SGLang (pyproject.toml is in python/ subdir):
-```dockerfile
-RUN pip install -e "python[all]"
+RUN pip install -e /sgl-workspace/sglang/python --no-deps
+RUN pip install -c /opt/constraints.txt <DEPS_FROM_PYPROJECT>
 ```
 
 ### Build settings:
 - TORCH_CUDA_ARCH_LIST="9.0" (H100)
-- MAX_JOBS=96 (96-core machine)
+- MAX_JOBS=96
+
+---
+
+## FULL COMMIT SHA:
+{commit_sha}
+
+## pyproject.toml at this commit:
+```toml
+{pyproject_content}
+```
+
+## Current Dockerfile (reference):
+```dockerfile
+{dockerfile_content}
+```
 
 ---
 
@@ -235,24 +240,23 @@ Write to: fixed-dockerfiles/{pr_date}/{short_hash}.Dockerfile
 
 ---
 
-## VERIFICATION
+## VERIFICATION (DO ALL THREE)
 
-After writing:
-1. Read back the file
-2. Count full SHA occurrences (must be EXACTLY 3)
-3. Verify all version pins came from your exploration, not guesses
+1. Read back the file you wrote
+2. Count SHA occurrences (must be EXACTLY 3)
+3. For EACH pinned version, confirm you discovered it via WebFetch/WebSearch
 
 ---
 
-## KEY REMINDERS
+## COMMON PITFALLS TO AVOID
 
-- DISCOVER versions by cloning repos and reading requirements
-- vLLM ALWAYS with --no-deps
-- Read vLLM's actual requirements.txt for xformers/pydantic versions
-- pyproject.toml is in python/ subdirectory → use "python[all]"
-- If pydantic conflict occurs, check what vLLM actually requires
+- outlines 0.0.39+ requires pydantic v2, NOT v1
+- If you pin pydantic v1 but outlines needs v2, pip will fail
+- typing_extensions >= 4.14 has Sentinel (too new for old pydantic-core)
+- Use typing_extensions 4.11.0 for May 2024 era builds
+- pydantic 2.7.1 (April 2024) works with typing_extensions 4.11.0
 
-Think step by step. Explore first. Use discovered versions. Verify everything.
+Think step by step. WebFetch/WebSearch FIRST. Use discovered versions. Verify everything.
 '''
 
 

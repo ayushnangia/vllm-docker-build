@@ -1,5 +1,5 @@
 # SGLang @ 09deb20d (2024-05-11 era)
-# Time-frozen deps: CUDA 12.1 + torch 2.3.0 + vLLM 0.4.2 + outlines 0.0.x + pydantic v1
+# Time-frozen deps: CUDA 12.1 + torch 2.3.0 + vLLM 0.4.2 + outlines 0.0.39 + pydantic 2.7.1
 
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
@@ -19,16 +19,17 @@ RUN pip install --index-url https://download.pytorch.org/whl/cu121 xformers==0.0
 
 # ---- Pin the "May 2024" userland deps so pip doesn't pull 2026 versions ----
 RUN cat > /opt/constraints-2024-05.txt <<'EOF'
-# Web stack (May 2024)
 fastapi==0.111.0
 uvicorn==0.29.0
-pydantic==1.10.13
 
-# Structured decoding backend (avoid outlines 0.1+ / 1.x API drift)
+# Pydantic v2 era (May 2024-ish) - outlines 0.0.39 requires pydantic v2
+pydantic==2.7.1
+typing_extensions==4.11.0
+
+# SGLang's constrained decoding backend
 outlines==0.0.39
 
-# Common footguns
-typing_extensions==4.11.0
+# misc
 pyzmq==26.0.3
 EOF
 
@@ -49,7 +50,7 @@ RUN pip install vllm==0.4.2 --no-deps
 RUN pip install -c /opt/constraints-2024-05.txt \
     numpy requests psutil sentencepiece py-cpuinfo filelock packaging \
     "transformers==4.40.2" "tokenizers==0.19.1" \
-    "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==1.10.13
+    "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==2.7.1
 
 # ---- SGLang @ exact commit (HARDCODED in 3 places) ----
 # 1st occurrence: ENV
@@ -80,11 +81,13 @@ RUN pip install -c /opt/constraints-2024-05.txt \
     pyzmq \
     outlines==0.0.39
 
-# Sanity check
+# Sanity check - verify versions to catch drift early
 RUN python -c "import torch; print('torch', torch.__version__)" && \
+    python -c "import pydantic, typing_extensions; print('pydantic', pydantic.__version__); print('typing_extensions', typing_extensions.__version__)" && \
+    python -c "import outlines; print('outlines', outlines.__version__)" && \
     python -c "import vllm; print('vllm import OK')" && \
     python -c "import flashinfer; print('flashinfer import OK')" && \
-    python -c "import fastapi, pydantic, outlines; print('fastapi', fastapi.__version__, 'pydantic', pydantic.__version__, 'outlines', outlines.__version__)" && \
+    python -c "import fastapi; print('fastapi', fastapi.__version__)" && \
     python -c "import sglang; print('sglang import OK')"
 
 WORKDIR /sgl-workspace/sglang
