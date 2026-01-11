@@ -8,6 +8,8 @@ Usage:
     python3 fix_all_dockerfiles.py --parallel 5      # Run 5 at a time
     python3 fix_all_dockerfiles.py --dry-run         # Just show what would run
     python3 fix_all_dockerfiles.py --commit abc123   # Fix single commit
+    python3 fix_all_dockerfiles.py -x 09deb20d       # Skip specific commit
+    python3 fix_all_dockerfiles.py -x 09deb -x ac97  # Skip multiple commits
 """
 
 import argparse
@@ -368,6 +370,10 @@ def parse_args():
         "--skip-existing", action="store_true",
         help="Skip commits that already have fixed Dockerfiles"
     )
+    parser.add_argument(
+        "--except", "-x", dest="except_commits", action="append", default=[],
+        help="Skip these commits (prefix match, can be used multiple times)"
+    )
     return parser.parse_args()
 
 
@@ -429,6 +435,20 @@ def main():
                 filtered.append((sha, date))
             else:
                 print(f"Skipping {sha[:8]} (already exists)")
+        unique_commits = filtered
+
+    # Skip excepted commits
+    if args.except_commits:
+        filtered = []
+        for sha, date in unique_commits:
+            skip = False
+            for exc in args.except_commits:
+                if sha.startswith(exc):
+                    print(f"Skipping {sha[:8]} (excepted via --except {exc})")
+                    skip = True
+                    break
+            if not skip:
+                filtered.append((sha, date))
         unique_commits = filtered
 
     total = len(unique_commits)
