@@ -1,12 +1,149 @@
 # SGLang Dockerfile Fix Guidelines
 
-## Core Principle: DISCOVER, Don't Guess
+## Core Principle: TIME-FREEZE Dependencies
 
-**NEVER rely on hardcoded version tables.** Always explore the actual repositories to discover compatible versions. Dependencies change constantly - any hardcoded mapping will be wrong for some commits.
+Building old commits in 2026 requires **time-freezing** the Python ecosystem to the commit's era. Without this, pip installs modern versions that break old code.
+
+**Example:** A May 2024 commit had unbounded `fastapi` and `outlines` deps. In 2026, pip pulls FastAPI 0.126+ (forces pydantic v2) and Outlines 1.x (different API), breaking everything.
 
 ---
 
-## MANDATORY Step 0: Explore the Repos (DO THIS FIRST)
+## THE TIME-FREEZE PATTERN (Most Important Section)
+
+### Why This Matters
+
+| Package | May 2024 | 2026 | Breaking Change |
+|---------|----------|------|-----------------|
+| FastAPI | 0.111.0 | 0.128+ | Forces pydantic v2 (>=0.126) |
+| Pydantic | 1.10.x | 2.x | API changes, typing_extensions.Sentinel |
+| Outlines | 0.0.39 | 1.x | Complete API rewrite |
+| typing_extensions | 4.11.0 | 4.14+ | Sentinel class added in 4.12 |
+
+### The Solution: Constraints File + --no-deps
+
+```dockerfile
+# 1. Create constraints file with EXACT versions from commit's era
+RUN cat > /opt/constraints-YYYY-MM.txt <<'EOF'
+# Find these versions by checking PyPI release dates near commit date
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==1.10.13
+outlines==0.0.39
+typing_extensions==4.11.0
+pyzmq==26.0.3
+EOF
+
+# 2. Install main packages with --no-deps (prevents transitive dep explosion)
+RUN pip install vllm==0.4.2 --no-deps
+RUN pip install -e /sgl-workspace/sglang/python --no-deps
+
+# 3. Install ALL dependencies with constraints enforced
+RUN pip install -c /opt/constraints-YYYY-MM.txt \
+    numpy requests psutil transformers tokenizers \
+    fastapi uvicorn pydantic \
+    aiohttp rpyc uvloop outlines pyzmq
+```
+
+### How to Find Era-Appropriate Versions
+
+1. **Check PyPI release dates:**
+   - https://pypi.org/project/fastapi/#history
+   - https://pypi.org/project/outlines/#history
+   - Find versions released BEFORE or ON the commit date
+
+2. **Key breakpoints to know:**
+   - `fastapi >= 0.126.0` → forces pydantic v2 (dropped v1 support)
+   - `outlines >= 0.1.0` → major API changes
+   - `typing_extensions >= 4.12` → added Sentinel class
+   - `pydantic >= 2.0` → requires pydantic-core, new API
+
+3. **Safe defaults by era:**
+
+   **Jan-Jul 2024 (pydantic v1 era):**
+   ```
+   fastapi<0.126.0
+   pydantic>=1.10,<2.0
+   typing_extensions>=4.5,<4.12
+   outlines<0.1.0
+   ```
+
+   **Aug 2024+ (pydantic v2 transition):**
+   ```
+   fastapi>=0.100.0
+   pydantic>=2.0
+   typing_extensions>=4.12
+   ```
+
+### Complete Example: May 2024 Commit
+
+```dockerfile
+FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    PIP_NO_CACHE_DIR=1
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential ninja-build curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --upgrade pip setuptools wheel
+
+# Torch ecosystem (use CUDA index)
+RUN pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.3.0
+RUN pip install --index-url https://download.pytorch.org/whl/cu121 xformers==0.0.26.post1
+
+# TIME-FREEZE: Pin deps to May 2024 versions
+RUN cat > /opt/constraints-2024-05.txt <<'EOF'
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==1.10.13
+outlines==0.0.39
+typing_extensions==4.11.0
+pyzmq==26.0.3
+EOF
+
+# Build flashinfer from source (for H100)
+RUN pip install ninja numpy packaging && \
+    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
+    cd /tmp/flashinfer && git checkout v0.1.2 && \
+    cd python && TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=96 pip install --no-build-isolation . && \
+    rm -rf /tmp/flashinfer
+
+# vLLM with --no-deps
+RUN pip install vllm==0.4.2 --no-deps
+
+# vLLM deps (with constraints)
+RUN pip install -c /opt/constraints-2024-05.txt \
+    numpy requests psutil sentencepiece py-cpuinfo filelock packaging \
+    transformers==4.40.2 tokenizers==0.19.1 \
+    uvicorn[standard]==0.29.0 fastapi==0.111.0 pydantic==1.10.13
+
+# SGLang @ exact commit
+ENV SGLANG_COMMIT=<FULL_SHA>
+WORKDIR /sgl-workspace
+RUN git clone https://github.com/sgl-project/sglang.git && \
+    cd sglang && git checkout <FULL_SHA>
+
+# SGLang with --no-deps
+RUN pip install -e /sgl-workspace/sglang/python --no-deps
+
+# SGLang deps (with constraints)
+RUN pip install -c /opt/constraints-2024-05.txt \
+    aiohttp rpyc uvloop interegular pillow packaging pyzmq outlines==0.0.39
+
+# Verify
+RUN python -c "import torch, vllm, flashinfer, sglang; print('All imports OK')"
+```
+
+---
+
+## DISCOVERY: Find What Versions to Pin
+
+Before writing ANY Dockerfile, explore the actual repos to discover what's needed.
+
+### Step 0: Explore the Repos (DO THIS FIRST)
 
 Before writing ANY Dockerfile code, you MUST clone and explore the actual repositories to understand dependencies. Use a unique temp directory per commit for parallel safety.
 
