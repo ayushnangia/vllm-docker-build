@@ -1,92 +1,154 @@
-# Dockerfile for SGLang commit e822e5900b98d89d19e0a293d9ad384f4df2945a (2024-04-17)
-# Based on discovered dependencies:
-# - vLLM 0.3.3 requires torch 2.1.2, xformers 0.0.23.post1
-# - pyproject.toml is in python/ subdirectory
-
+# Fixed Dockerfile for SGLang (2024-04-17)
+# Base image for torch 2.1.2 with CUDA 12.1
 FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel
-
-# Set environment variables
-ENV SGLANG_COMMIT=e822e5900b98d89d19e0a293d9ad384f4df2945a
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TORCH_CUDA_ARCH_LIST="9.0"
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    wget \
-    curl \
-    build-essential \
-    ninja-build \
-    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /sgl-workspace
 
-# Install torch explicitly first (matching vLLM requirement)
-RUN pip install --no-cache-dir torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+# Set environment variables
+ENV SGLANG_COMMIT=e822e5900b98d89d19e0a293d9ad384f4df2945a \
+    DEBIAN_FRONTEND=noninteractive \
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    MAX_JOBS=96
 
-# Install vLLM 0.3.3 without dependencies to control versions
-RUN pip install --no-cache-dir vllm==0.3.3 --no-deps
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    build-essential \
+    cmake \
+    ninja-build \
+    wget \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install vLLM dependencies based on vllm v0.3.3 requirements.txt
-RUN pip install --no-cache-dir \
+# Create constraints file with versions discovered from PyPI for 2024-04-17 era
+RUN cat > /opt/constraints.txt <<'EOF'
+# Core dependencies - versions from PyPI for April 17, 2024
+fastapi==0.110.1
+uvicorn==0.29.0
+pydantic==2.7.0
+typing_extensions==4.11.0
+outlines==0.0.39
+pyzmq==26.0.0
+aiohttp==3.9.5
+interegular==0.3.3
+# vLLM 0.4.0.post1 requirements
+transformers==4.39.3
+xformers==0.0.23.post1
+triton==2.1.0
+tiktoken==0.6.0
+sentencepiece
+ray>=2.9
+py-cpuinfo
+psutil
+numpy
+requests
+pynvml==11.5.0
+prometheus_client>=0.18.0
+# SGLang extra dependencies
+uvloop
+rpyc
+pillow
+openai>=1.0
+anthropic>=0.20.0
+tqdm
+datasets
+EOF
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install torch explicitly (matching vLLM requirement)
+RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+
+# Install vLLM 0.4.0.post1 with --no-deps first
+RUN pip install vllm==0.4.0.post1 --no-deps
+
+# Install vLLM dependencies using constraints where applicable
+RUN pip install -c /opt/constraints.txt \
+    cmake>=3.21 \
     ninja \
     psutil \
-    ray>=2.9 \
+    "ray>=2.9" \
     sentencepiece \
     numpy \
-    "transformers>=4.38.0" \
-    "xformers==0.0.23.post1" \
+    requests \
+    py-cpuinfo \
+    "transformers>=4.39.1" \
+    xformers==0.0.23.post1 \
     fastapi \
     "uvicorn[standard]" \
     "pydantic>=2.0" \
     "prometheus_client>=0.18.0" \
-    "pynvml==11.5.0" \
+    pynvml==11.5.0 \
     "triton>=2.1.0" \
-    "outlines>=0.0.27" \
-    "cupy-cuda12x==12.1.0"
+    outlines==0.0.34 \
+    tiktoken==0.6.0
 
-# Clone SGLang repository at exact commit (2nd occurrence of SHA)
+# Clone SGLang at specific commit (2nd SHA occurrence)
 RUN git clone https://github.com/sgl-project/sglang.git sglang && \
     cd sglang && \
     git checkout e822e5900b98d89d19e0a293d9ad384f4df2945a
 
-# Patch pyproject.toml to remove vllm since we installed it manually
-RUN cd /sgl-workspace/sglang && \
-    sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"sgl-kernel[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/,\s*,/,/g' python/pyproject.toml && \
-    sed -i 's/\[,/[/g' python/pyproject.toml && \
-    sed -i 's/,\]/]/g' python/pyproject.toml
-
-# Install SGLang with all optional dependencies
-# pyproject.toml is in python/ subdirectory
-RUN cd /sgl-workspace/sglang && \
-    pip install --no-cache-dir -e "python[all]"
-
-# Install additional useful packages
-RUN pip install --no-cache-dir \
-    datasets \
-    jupyter \
-    ipywidgets
-
-# Verify commit SHA (3rd occurrence of SHA)
+# Verify commit SHA and save to file (3rd SHA occurrence)
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="e822e5900b98d89d19e0a293d9ad384f4df2945a" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "COMMIT MISMATCH: Expected $EXPECTED but got $ACTUAL" && exit 1) && \
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "ERROR: Expected commit $EXPECTED but got $ACTUAL" && exit 1; \
+    fi && \
     echo "$ACTUAL" > /opt/sglang_commit.txt
 
-# Final verification of imports
-RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
-    python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
-    python3 -c "import xformers; print('xformers import OK')" && \
-    python3 -c "import transformers; print('transformers import OK')"
+# Build and install flashinfer from source (required for this era)
+RUN cd /sgl-workspace && \
+    git clone https://github.com/flashinfer-ai/flashinfer.git && \
+    cd flashinfer && \
+    git checkout v0.0.2 && \
+    cd python && \
+    pip install . --no-deps && \
+    cd /sgl-workspace && \
+    rm -rf flashinfer
 
-# Set default working directory
+# Install SGLang with --no-deps
+RUN cd /sgl-workspace/sglang/python && \
+    pip install -e . --no-deps
+
+# Install SGLang dependencies from pyproject.toml using constraints
+RUN pip install -c /opt/constraints.txt \
+    requests \
+    tqdm \
+    aiohttp \
+    fastapi \
+    psutil \
+    rpyc \
+    torch \
+    uvloop \
+    uvicorn \
+    pyzmq \
+    "vllm>=0.3.3" \
+    interegular \
+    pydantic \
+    pillow \
+    "outlines>=0.0.27" \
+    "openai>=1.0" \
+    numpy \
+    tiktoken \
+    "anthropic>=0.20.0" \
+    datasets
+
+# Update to use correct outlines version from constraints (0.0.39 for this era)
+RUN pip install --force-reinstall -c /opt/constraints.txt outlines==0.0.39
+
+# Final verification
+RUN python -c "import sglang; print('SGLang imported successfully')" && \
+    python -c "import vllm; print('vLLM imported successfully')" && \
+    python -c "import outlines; print('Outlines imported successfully')" && \
+    python -c "import flashinfer; print('Flashinfer imported successfully')" && \
+    python -c "import torch; print(f'Torch version: {torch.__version__}')" && \
+    python -c "import transformers; print(f'Transformers version: {transformers.__version__}')"
+
+# Set the working directory
 WORKDIR /sgl-workspace
 
-# Entry point
+# Set default command
 CMD ["/bin/bash"]

@@ -24,22 +24,46 @@ RUN apt-get update && apt-get install -y \
 # Upgrade pip and setuptools
 RUN pip install --upgrade pip setuptools wheel
 
+# Create constraints file with versions discovered from PyPI for Feb 2024 era
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for 2024-02-03 era
+fastapi==0.109.0
+uvicorn==0.26.0
+pydantic==1.10.13
+typing_extensions==4.9.0
+pyzmq==25.1.2
+aiohttp==3.9.3
+psutil==5.9.8
+rpyc==6.0.0
+uvloop==0.19.0
+interegular==0.3.3
+lark==1.1.9
+numba==0.59.0
+referencing==0.33.0
+diskcache==5.6.3
+cloudpickle==3.0.0
+pillow==10.2.0
+numpy==1.26.3
+sentencepiece==0.1.99
+transformers==4.37.2
+ray==2.9.1
+EOF
+
 # Pre-install torch (already in base image, but ensure correct version)
 RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 
-# Install xformers compatible with torch 2.1.2 (vLLM 0.2.5 requires xformers >= 0.0.23)
+# Install xformers compatible with torch 2.1.2 (vLLM 0.2.7 requires xformers==0.0.23.post1)
 RUN pip install xformers==0.0.23.post1 --index-url https://download.pytorch.org/whl/cu121
 
-# Install vLLM 0.2.5 WITHOUT dependencies to avoid torch version conflicts
-RUN pip install vllm==0.2.5 --no-deps
+# Install vLLM 0.2.7 WITHOUT dependencies to avoid conflicts
+RUN pip install vllm==0.2.7 --no-deps
 
-# Install vLLM dependencies from vLLM 0.2.5 requirements.txt (discovered from exploration)
-RUN pip install \
+# Install vLLM dependencies from vLLM 0.2.7 requirements.txt (discovered from exploration)
+# vLLM 0.2.7 explicitly requires pydantic==1.10.13 (v1)
+RUN pip install -c /opt/constraints.txt \
     ninja \
     psutil \
     "ray>=2.5.1" \
-    pandas \
-    pyarrow \
     sentencepiece \
     numpy \
     "transformers>=4.36.0" \
@@ -64,35 +88,40 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove vllm since we already installed it
-RUN cd /sgl-workspace/sglang && \
-    sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \
-    # Clean up any empty commas left behind
-    sed -i 's/,\s*,/,/g' python/pyproject.toml && \
-    sed -i 's/\[,/[/g' python/pyproject.toml && \
-    sed -i 's/,\]/]/g' python/pyproject.toml
+# Build flashinfer from source (no prebuilt wheels for Python 3.10 at this commit date)
+RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
+    cd /tmp/flashinfer && \
+    git checkout v0.0.3 && \
+    cd python && \
+    TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0" MAX_JOBS=96 pip install . --no-build-isolation && \
+    rm -rf /tmp/flashinfer
 
-# Install additional SGLang dependencies from pyproject.toml
-RUN pip install \
+# Install SGLang package with --no-deps first
+WORKDIR /sgl-workspace/sglang
+RUN pip install -e python --no-deps
+
+# Install SGLang dependencies from pyproject.toml with constraints
+RUN pip install -c /opt/constraints.txt \
+    requests \
     aiohttp \
+    fastapi \
+    psutil \
     rpyc \
+    torch \
     uvloop \
+    uvicorn \
     pyzmq \
     interegular \
     lark \
     numba \
+    pydantic==1.10.13 \
     referencing \
-    jsonschema \
     diskcache \
     cloudpickle \
     pillow \
     "openai>=1.0" \
     anthropic \
-    requests
-
-# Install SGLang package (pyproject.toml is in python/ subdirectory)
-WORKDIR /sgl-workspace/sglang
-RUN pip install -e "python[all]"
+    numpy
 
 # Final verification
 RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \

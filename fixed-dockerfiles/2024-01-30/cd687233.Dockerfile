@@ -1,106 +1,136 @@
-# Fixed Dockerfile for SGLang commit cd6872334e9ead684049b8fccd5f2dac9433b1b4
-# Date: 2024-01-30 (Very Early era - January 2024)
-# SGLang version: 0.1.9
-# Requirements: vllm>=0.2.5, torch>=2.1.1 (via vLLM)
-# No flashinfer or sgl-kernel required at this early stage
+# Fixed Dockerfile for sglang commit cd6872334e9ead684049b8fccd5f2dac9433b1b4
+# Date: 2024-01-30
+# "Fix Mistral model loading (#108)"
+#
+# Key discovered versions from PyPI (via WebFetch):
+# - vLLM 0.2.5 requires pydantic==1.10.13 (confirmed via repo exploration)
+# - fastapi==0.109.0 (Jan 11, 2024 - supports both pydantic v1 and v2)
+# - uvicorn==0.27.0.post1 (Jan 29, 2024)
+# - pyzmq==25.1.2 (Dec 5, 2023)
+# - typing_extensions==4.9.0 (Dec 10, 2023)
+# - flashinfer wheels available for torch 2.1
+# - sgl-kernel didn't exist yet (first released April 2025)
+# - outlines requires pydantic v2, so we skip it to avoid conflicts
 
-# Use pytorch base image for torch 2.1.x with CUDA 12.1 (early 2024 commit)
-FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel
+FROM pytorch/pytorch:2.1.1-cuda12.1-cudnn8-devel
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="${CUDA_HOME}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
 
+# Build environment
+ENV TORCH_CUDA_ARCH_LIST="9.0"
+ENV MAX_JOBS=96
+
+# SGLang commit SHA (1st occurrence)
+ENV SGLANG_COMMIT=cd6872334e9ead684049b8fccd5f2dac9433b1b4
+
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
-    curl \
     wget \
-    build-essential \
+    curl \
     ninja-build \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
-RUN pip3 install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip setuptools wheel
 
-# CRITICAL: Pre-install torch 2.1.2 with CUDA 12.1 to ensure correct version
-# (vLLM might pull different version if we don't pin it first)
-RUN pip3 install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
-
-# Install xformers compatible with torch 2.1.x (per guidelines compatibility matrix)
-RUN pip3 install xformers==0.0.23.post1 --index-url https://download.pytorch.org/whl/cu121
+# Create constraints file with discovered versions
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for 2024-01-30 era via WebFetch
+fastapi==0.109.0
+uvicorn[standard]==0.27.0.post1
+pydantic==1.10.13
+typing_extensions==4.9.0
+pyzmq==25.1.2
+# Pinned by vLLM and SGLang
+transformers==4.36.2
+# Dependencies
+aiohttp
+psutil
+rpyc
+uvloop
+interegular
+lark
+numba
+diskcache
+cloudpickle
+pillow
+EOF
 
 # Install vLLM 0.2.5 with --no-deps to avoid dependency conflicts
-RUN pip3 install vllm==0.2.5 --no-deps
+RUN pip install vllm==0.2.5 --no-deps
 
-# Install vLLM dependencies manually (excluding torch and xformers which we already installed)
-# Based on vLLM 0.2.5 requirements.txt we checked earlier
-RUN pip3 install \
+# Install vLLM dependencies from requirements.txt (discovered via repo exploration)
+RUN pip install -c /opt/constraints.txt \
     ninja \
     psutil \
-    "ray>=2.5.1" \
+    ray==2.9.0 \
     pandas \
     pyarrow \
     sentencepiece \
     numpy \
-    "transformers>=4.36.0" \
-    fastapi \
-    "uvicorn[standard]" \
-    "pydantic==1.10.13" \
-    "aioprometheus[starlette]"
+    torch==2.1.1 \
+    transformers==4.36.2 \
+    xformers==0.0.23 \
+    fastapi==0.109.0 \
+    uvicorn[standard]==0.27.0.post1 \
+    pydantic==1.10.13 \
+    aioprometheus[starlette]
 
-# HARDCODE the commit SHA (1st occurrence)
-ENV SGLANG_COMMIT=cd6872334e9ead684049b8fccd5f2dac9433b1b4
+# Install flashinfer from wheels (available for torch 2.1)
+RUN pip install flashinfer --index-url https://flashinfer.ai/whl/cu121/torch2.1/
 
-# Clone SGLang repo and checkout EXACT commit (2nd occurrence - hardcoded)
+# Set workspace
 WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+
+# Clone SGLang at specific commit (2nd occurrence of SHA)
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout cd6872334e9ead684049b8fccd5f2dac9433b1b4
 
-# VERIFY the checkout - compare against HARDCODED expected value (3rd occurrence)
+# Verify commit SHA (3rd occurrence) and write proof
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="cd6872334e9ead684049b8fccd5f2dac9433b1b4" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
-    echo "$ACTUAL" > /opt/sglang_commit.txt && \
-    echo "Verified: SGLang at commit $ACTUAL"
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "Error: Expected commit $EXPECTED but got $ACTUAL" >&2 && \
+        exit 1; \
+    fi && \
+    echo "$ACTUAL" > /opt/sglang_commit.txt
 
-# Install additional SGLang dependencies from pyproject.toml[srt]
-RUN pip3 install \
+# Install SGLang from source with --no-deps
+RUN pip install -e /sgl-workspace/sglang/python --no-deps
+
+# Install SGLang dependencies (from pyproject.toml discovered via repo exploration)
+RUN pip install -c /opt/constraints.txt \
+    requests \
     aiohttp \
+    fastapi \
+    psutil \
     rpyc \
+    torch==2.1.1 \
     uvloop \
-    zmq \
+    uvicorn \
+    pyzmq==25.1.2 \
     interegular \
     lark \
     numba \
+    pydantic==1.10.13 \
     diskcache \
     cloudpickle \
     pillow \
-    requests \
-    "openai>=1.0" \
-    anthropic
-
-# Install SGLang from checked-out source
-# CRITICAL: pyproject.toml is in python/ subdirectory for this early commit
-WORKDIR /sgl-workspace/sglang
-RUN pip3 install -e "python[all]"
+    numpy \
+    openai
 
 # Verify installations
-RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
-    python3 -c "import vllm; print('vllm OK')" && \
-    python3 -c "import xformers; print(f'xformers: {xformers.__version__}')" && \
-    python3 -c "import transformers; print(f'transformers: {transformers.__version__}')"
+RUN python3 -c "import sglang; print('SGLang imported successfully')" && \
+    python3 -c "import vllm; print('vLLM imported successfully')" && \
+    python3 -c "import flashinfer; print('FlashInfer imported successfully')"
 
-# Final verification - SGLang import
-RUN python3 -c "import sglang; print('SGLang import OK')"
+# Sanity check: verify pip list shows correct packages
+RUN pip list | grep -E "sglang|vllm|pydantic|fastapi|torch"
 
-# Set working directory
 WORKDIR /sgl-workspace/sglang
-
-# Entry point (sglang.launch_server module exists at this commit)
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]

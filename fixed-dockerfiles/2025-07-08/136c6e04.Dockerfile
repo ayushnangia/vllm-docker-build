@@ -1,112 +1,162 @@
-# Base image for torch 2.6.x with CUDA 12.4
+# Base image for torch 2.7.1 with CUDA 12.4
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 # Environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
     CUDA_HOME=/usr/local/cuda \
-    TORCH_CUDA_ARCH_LIST="9.0"
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    MAX_JOBS=96
 
-# HARDCODE the commit SHA - this Dockerfile is specific to this commit
+# 1st hardcoded commit SHA occurrence: ENV variable
 ENV SGLANG_COMMIT=136c6e0431c2067c3a2a98ad2c77fc89a9cb98e7
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    python3.10 python3.10-dev python3-pip \
+    git curl wget build-essential cmake ninja-build \
+    ccache vim \
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /usr/bin/python3.10 /usr/bin/python3 \
+    && ln -sf /usr/bin/python3 /usr/bin/python
+
+# Upgrade pip and setuptools
+RUN pip install --upgrade pip setuptools wheel
+
+# Install PyTorch 2.7.1 (as specified in pyproject.toml)
+RUN pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu124
+
+# Create constraints file with discovered versions from PyPI for July 2025
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for 2025-07-08 era
+fastapi==0.116.0
+uvicorn==0.35.0
+pydantic==2.11.5
+pydantic-core==2.27.1
+typing_extensions==4.13.2
+outlines==0.1.11
+pyzmq==27.0.0
+prometheus-client==0.20.0
+EOF
+
+# Install vLLM 0.9.2 (released July 8, 2025)
+RUN pip install vllm==0.9.2 --no-deps
+
+# Install vLLM dependencies with constraints
+RUN pip install -c /opt/constraints.txt \
     cmake \
-    git \
-    curl \
-    wget \
-    vim \
-    software-properties-common \
-    python3.10 \
-    python3.10-dev \
-    python3.10-venv \
-    python3-pip \
-    ninja-build \
-    ccache \
-    && rm -rf /var/lib/apt/lists/*
+    ninja \
+    psutil \
+    ray \
+    sentencepiece \
+    numpy \
+    transformers \
+    xformers \
+    fastapi \
+    uvicorn \
+    pydantic \
+    aioprometheus \
+    pynvml \
+    prometheus-client \
+    prometheus-fastapi-instrumentator \
+    tiktoken \
+    lm-format-enforcer \
+    outlines \
+    typing_extensions \
+    filelock \
+    pyzmq \
+    msgspec \
+    gguf \
+    compressed-tensors \
+    lark \
+    scipy \
+    pillow \
+    packaging
 
-# Set Python 3.10 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
-    update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+# Install torchao (specified in pyproject.toml)
+RUN pip install torchao==0.9.0
 
-# Upgrade pip
-RUN python3 -m pip install --upgrade pip setuptools wheel
-
-# Pre-install torch 2.6.0 (latest available, since 2.7.1 doesn't exist)
-# Using CUDA 12.4 index
-RUN pip3 install torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 --index-url https://download.pytorch.org/whl/cu124
-
-# Install numpy and packaging first (needed for flashinfer build)
-RUN pip3 install numpy packaging
-
-# Build flashinfer from source since 0.2.7.post1 wheel doesn't exist for torch 2.6
-# Using v0.2.6 which is compatible with torch 2.6
-RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
-    cd /tmp/flashinfer && \
-    git checkout v0.2.6 && \
+# Build and install flashinfer from source (no wheels for torch 2.7)
+WORKDIR /tmp
+RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git && \
+    cd flashinfer && \
+    git checkout v0.2.7 && \
     cd python && \
-    TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=8 pip3 install --no-build-isolation . && \
+    pip install . && \
     cd / && rm -rf /tmp/flashinfer
 
-# Install sgl-kernel 0.2.4 from PyPI (it exists)
-RUN pip3 install sgl-kernel==0.2.4
+# Install sgl-kernel from PyPI (version 0.2.4 is available)
+RUN pip install sgl-kernel==0.2.4
 
-# Clone SGLang repository and checkout the EXACT commit (hardcoded SHA)
+# 2nd hardcoded commit SHA occurrence: git checkout
 WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout 136c6e0431c2067c3a2a98ad2c77fc89a9cb98e7
 
-# VERIFY the checkout - compare against HARDCODED expected value
+# 3rd hardcoded commit SHA occurrence: verification
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="136c6e0431c2067c3a2a98ad2c77fc89a9cb98e7" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "Error: Commit mismatch. Expected $EXPECTED but got $ACTUAL" && exit 1; \
+    fi && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove already-installed dependencies
-# Remove flashinfer_python, sgl-kernel, and torch versions since we pre-installed them
+# Install SGLang with --no-deps first
 RUN cd /sgl-workspace/sglang/python && \
-    cp pyproject.toml pyproject.toml.orig && \
-    sed -i 's/"flashinfer_python[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"sgl-kernel[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"torch[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"torchvision[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"torchaudio[^"]*",*//g' pyproject.toml && \
-    sed -i '/^[[:space:]]*,$/d' pyproject.toml && \
-    sed -i 's/,\]/]/g' pyproject.toml
+    pip install -e . --no-deps
 
-# Install torchao (specified in pyproject.toml, compatible with torch 2.6)
-RUN pip3 install torchao==0.9.0
-
-# Install SGLang from the checked-out source
-# Note: pyproject.toml is in python/ subdirectory for this commit
-WORKDIR /sgl-workspace/sglang
-RUN pip3 install -e "python[srt]"
-
-# Install additional runtime dependencies that may be needed
-RUN pip3 install \
-    transformers==4.53.0 \
-    xgrammar==0.1.19 \
-    timm==1.0.16 \
+# Install SGLang runtime_common dependencies with constraints
+RUN pip install -c /opt/constraints.txt \
+    aiohttp \
+    requests \
+    tqdm \
+    numpy \
+    IPython \
+    setproctitle \
+    blobfile==3.0.0 \
+    build \
+    compressed-tensors \
+    datasets \
+    fastapi \
+    hf_transfer \
+    huggingface_hub \
+    interegular \
+    llguidance==0.7.13 \
+    modelscope \
+    msgspec \
+    ninja \
+    orjson \
     outlines==0.1.11 \
-    llguidance \
+    packaging \
+    partial_json_parser \
+    pillow \
+    prometheus-client \
+    psutil \
+    pydantic \
+    pynvml \
+    python-multipart \
+    pyzmq \
+    soundfile==0.13.1 \
+    scipy \
+    transformers==4.53.0 \
+    timm==1.0.16 \
+    uvicorn \
+    uvloop \
+    xgrammar==0.1.19 \
     cuda-python \
     einops
 
-# Verify installations
-RUN python3 -c "import torch; print(f'torch version: {torch.__version__}')" && \
-    python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'" && \
-    python3 -c "import flashinfer; print('flashinfer import OK')" && \
-    python3 -c "import sgl_kernel; print('sgl_kernel import OK')" && \
-    python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import transformers; print(f'transformers version: {transformers.__version__}')"
+# Sanity check: Verify SGLang installation
+RUN python3 -c "import sglang; print('SGLang imported successfully')" && \
+    python3 -c "import vllm; print('vLLM imported successfully')" && \
+    python3 -c "import outlines; print('Outlines imported successfully')" && \
+    python3 -c "import flashinfer; print('FlashInfer imported successfully')" && \
+    python3 -c "import torch; print(f'PyTorch version: {torch.__version__}')" && \
+    python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'"
 
-# Verify the commit SHA is correct by checking the file exists
+# Verify the commit SHA file exists
 RUN test -f /opt/sglang_commit.txt && \
     COMMIT=$(cat /opt/sglang_commit.txt) && \
     echo "Commit in container: $COMMIT"
@@ -114,5 +164,5 @@ RUN test -f /opt/sglang_commit.txt && \
 # Set working directory
 WORKDIR /sgl-workspace/sglang
 
-# Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Default command
+CMD ["/bin/bash"]

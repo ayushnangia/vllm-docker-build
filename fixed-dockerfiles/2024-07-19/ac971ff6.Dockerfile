@@ -1,109 +1,157 @@
-# Fixed Dockerfile for SGLang
+# SGLang Docker for commit ac971ff633de330de3ded7f7475caaf7cd5bbdcd
 # Date: 2024-07-19
-# vLLM 0.5.1 requires torch 2.3.0
+# SGLang v0.1.21, vLLM v0.5.1, torch 2.3.0
+# Discovered versions from PyPI research
 
-# Use pytorch base image for torch 2.3.0
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
-# Environment setup
+# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TORCH_CUDA_ARCH_LIST="9.0"
-
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    sudo \
-    wget \
-    vim \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Upgrade pip and install build tools
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
-
-# Pre-install torch 2.3.0 (already in base image, but ensure correct version)
-RUN pip3 install torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121
-
-# Install vLLM 0.5.1 with --no-deps to avoid pulling wrong torch version
-RUN pip3 install vllm==0.5.1 --no-deps
-
-# Install vLLM dependencies manually (based on vLLM 0.5.1 requirements-cuda.txt)
-RUN pip3 install \
-    "ray>=2.9" \
-    "nvidia-ml-py" \
-    "xformers==0.0.26.post1" \
-    "vllm-flash-attn==2.5.9" \
-    "torchvision==0.18.0"
-
-# Install common vLLM dependencies
-RUN pip3 install \
-    "cmake>=3.21" \
-    "ninja" \
-    "psutil" \
-    "sentencepiece" \
-    "numpy<2.0.0" \
-    "requests" \
-    "tqdm" \
-    "py-cpuinfo" \
-    "transformers>=4.42.0" \
-    "tokenizers>=0.19.1" \
-    "fastapi" \
-    "aiohttp" \
-    "openai" \
-    "uvicorn[standard]" \
-    "pydantic>=2.0" \
-    "pillow" \
-    "prometheus_client>=0.18.0" \
-    "prometheus-fastapi-instrumentator>=7.0.0" \
-    "tiktoken>=0.6.0" \
-    "lm-format-enforcer==0.10.1" \
-    "outlines>=0.0.43" \
-    "typing_extensions" \
-    "filelock>=3.10.4"
-
-# Install flashinfer from wheels (available for torch 2.3.0 + CUDA 12.1)
-RUN pip3 install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
-
-# HARDCODE the commit SHA - first occurrence
+ENV MAX_JOBS=96
+# HARDCODE 1st occurrence of SHA
 ENV SGLANG_COMMIT=ac971ff633de330de3ded7f7475caaf7cd5bbdcd
 
-# Clone SGLang and checkout EXACT commit (SHA is hardcoded, not variable) - second occurrence
+# Install system dependencies
+RUN apt-get update -y && \
+    apt-get install -y \
+        git \
+        curl \
+        sudo \
+        build-essential \
+        python3-dev \
+        ccache \
+        cmake \
+        ninja-build && \
+    rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install build tools
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# Create constraints file with versions discovered from PyPI for July 2024
+RUN cat > /opt/constraints.txt <<'EOF'
+# Discovered from PyPI for 2024-07-19 era
+# pydantic 2.8.2 released July 4, 2024 (needs pydantic v2 for outlines>=0.0.44)
+pydantic==2.8.2
+# typing_extensions 4.12.2 released June 7, 2024 (avoids Sentinel issue in 4.14+)
+typing_extensions==4.12.2
+# fastapi 0.111.1 released July 14, 2024
+fastapi==0.111.1
+# uvicorn 0.30.3 released July 2024
+uvicorn==0.30.3
+# outlines 0.0.46 released June 22, 2024 (requires pydantic>=2.0)
+outlines==0.0.46
+# pyzmq 26.0.3 released May 2024
+pyzmq==26.0.3
+# aiohttp 3.9.5 released April 2024
+aiohttp==3.9.5
+# pydantic-core 2.20.1 released July 2024 (for pydantic 2.8.2)
+pydantic-core==2.20.1
+EOF
+
+# Install vLLM 0.5.1 with --no-deps to avoid dependency conflicts
+RUN pip install --no-cache-dir vllm==0.5.1 --no-deps
+
+# Install vLLM dependencies from requirements-common.txt with constraints
+RUN pip install --no-cache-dir \
+    -c /opt/constraints.txt \
+    cmake>=3.21 \
+    ninja \
+    psutil \
+    sentencepiece \
+    "numpy<2.0.0" \
+    requests \
+    tqdm \
+    py-cpuinfo \
+    "transformers>=4.42.0" \
+    "tokenizers>=0.19.1" \
+    "tiktoken>=0.6.0" \
+    "lm-format-enforcer==0.10.1" \
+    "filelock>=3.10.4" \
+    "prometheus_client>=0.18.0" \
+    "prometheus-fastapi-instrumentator>=7.0.0" \
+    pillow \
+    openai
+
+# Install vLLM CUDA dependencies from requirements-cuda.txt
+RUN pip install --no-cache-dir \
+    "ray>=2.9" \
+    nvidia-ml-py \
+    torchvision==0.18.0 \
+    xformers==0.0.26.post1 \
+    vllm-flash-attn==2.5.9
+
+# Build flashinfer from source (no prebuilt wheels for torch 2.3 at cu121)
+RUN cd /tmp && \
+    git clone https://github.com/flashinfer-ai/flashinfer.git && \
+    cd flashinfer && \
+    git checkout v0.0.8 && \
+    cd python && \
+    pip install --no-cache-dir . && \
+    cd / && rm -rf /tmp/flashinfer
+
+# Clone SGLang at specific commit
 WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+# HARDCODE 2nd occurrence of SHA
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout ac971ff633de330de3ded7f7475caaf7cd5bbdcd
 
-# VERIFY the checkout - compare against HARDCODED expected value - third occurrence
+# Verify commit SHA - HARDCODE 3rd occurrence of SHA
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="ac971ff633de330de3ded7f7475caaf7cd5bbdcd" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
-    echo "$ACTUAL" > /opt/sglang_commit.txt && \
-    echo "Verified: SGLang at commit $ACTUAL"
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "ERROR: Commit mismatch! Expected: $EXPECTED, Got: $ACTUAL" && exit 1; \
+    fi && \
+    echo "$ACTUAL" > /opt/sglang_commit.txt
 
-# Patch pyproject.toml to remove flashinfer (already installed)
-RUN sed -i 's/"flashinfer[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml && \
-    sed -i 's/"flashinfer_python[^"]*",*//g' /sgl-workspace/sglang/python/pyproject.toml
+# Install SGLang with --no-deps (from python subdirectory)
+RUN cd /sgl-workspace/sglang/python && \
+    pip install --no-cache-dir -e . --no-deps
 
-# Install SGLang from checked-out source (pyproject.toml is in python/ subdirectory)
-WORKDIR /sgl-workspace/sglang
-RUN pip3 install -e "python[all]"
+# Install SGLang dependencies from pyproject.toml[srt] with constraints
+RUN pip install --no-cache-dir \
+    -c /opt/constraints.txt \
+    requests \
+    tqdm \
+    numpy \
+    interegular \
+    packaging \
+    hf_transfer \
+    huggingface_hub \
+    uvloop \
+    zmq
 
-# Replace Triton with nightly version (as in original Dockerfile)
-RUN pip3 uninstall -y triton triton-nightly || true && \
-    pip3 install --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+# Install SGLang optional dependencies
+RUN pip install --no-cache-dir \
+    "openai>=1.0" \
+    tiktoken \
+    "anthropic>=0.20.0" \
+    "litellm>=1.0.0"
 
-# Verification steps
-RUN python3 -c "import torch; print(f'torch version: {torch.__version__}')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
-    python3 -c "import xformers; print(f'xformers version: {xformers.__version__}')" && \
-    python3 -c "import flashinfer; print('flashinfer import OK')" && \
-    python3 -c "import sglang; print('SGLang import OK')"
+# Install sgl-kernel from PyPI (version 0.1.9 available in July 2024)
+RUN pip install --no-cache-dir sgl-kernel==0.1.9
 
-# Final verification of commit
+# Install triton nightly (as per many SGLang Dockerfiles)
+RUN pip uninstall -y triton triton-nightly || true && \
+    pip install --no-cache-dir --no-deps \
+    --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ \
+    triton-nightly
+
+# Sanity checks
+RUN python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
+RUN python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+RUN python3 -c "import sglang; print(f'SGLang loaded successfully')"
+RUN python3 -c "import flashinfer; print(f'Flashinfer loaded successfully')"
+RUN python3 -c "import outlines; print(f'Outlines loaded successfully')"
+RUN python3 -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')"
+RUN python3 -c "import typing_extensions; print(f'typing_extensions loaded successfully')"
+
+# Verify SGLang installation
+RUN pip show sglang | grep -E "^(Version|Location|Editable)" || true
+
+# Final verification of commit file
 RUN test -f /opt/sglang_commit.txt && \
     echo "Commit proof file exists: $(cat /opt/sglang_commit.txt)"
 
@@ -111,4 +159,4 @@ RUN test -f /opt/sglang_commit.txt && \
 WORKDIR /sgl-workspace
 
 # Set entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

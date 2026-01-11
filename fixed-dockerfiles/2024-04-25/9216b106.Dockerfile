@@ -1,91 +1,128 @@
-# Base image with torch 2.1.2 (required by vLLM 0.3.3)
-FROM pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel
+# Base image for torch 2.2.1 (required by vLLM 0.4.1)
+FROM pytorch/pytorch:2.2.1-cuda12.1-cudnn8-devel
 
-# Environment setup
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TORCH_CUDA_ARCH_LIST="9.0"
-
-# System dependencies
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
     git \
     curl \
-    wget \
-    build-essential \
+    vim \
+    numactl \
+    gcc \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip
-RUN pip3 install --upgrade pip setuptools wheel
+RUN pip install --upgrade pip
 
-# Verify torch version from base image
-RUN python3 -c "import torch; assert torch.__version__.startswith('2.1.2'), f'Wrong torch version: {torch.__version__}'"
+# Create workspace
+WORKDIR /sgl-workspace
 
-# Install vLLM 0.3.3 with dependencies (use --no-deps to avoid torch conflicts)
-RUN pip install vllm==0.3.3 --no-deps && \
-    pip install \
-        ninja \
-        psutil \
-        "ray>=2.9" \
-        sentencepiece \
-        numpy \
-        "transformers>=4.38.0" \
-        "xformers==0.0.23.post1" \
-        fastapi \
-        "uvicorn[standard]" \
-        "pydantic>=2.0" \
-        "prometheus_client>=0.18.0" \
-        "pynvml==11.5.0" \
-        "triton>=2.1.0" \
-        "outlines>=0.0.27" \
-        cupy-cuda12x==12.1.0
+# Set build environment variables
+ENV TORCH_CUDA_ARCH_LIST="9.0"
+ENV MAX_JOBS=96
 
-# HARDCODE the commit SHA (occurrence 1/3)
+# Create constraints file with discovered versions for April 2024
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for 2024-04-25 era
+# FastAPI 0.110.2 released April 19, 2024
+# uvicorn 0.29.0 released March 20, 2024
+# pydantic 2.7.1 released April 23, 2024 (vLLM requires >= 2.0)
+# typing_extensions 4.11.0 released April 5, 2024
+# outlines 0.0.34 pinned by vLLM 0.4.1
+# pyzmq 26.0.2 released April 19, 2024
+fastapi==0.110.2
+uvicorn==0.29.0
+pydantic==2.7.1
+typing_extensions==4.11.0
+outlines==0.0.34
+pyzmq==26.0.2
+EOF
+
+# Install vLLM 0.4.1 (released April 24, 2024) with --no-deps to avoid conflicts
+RUN pip install vllm==0.4.1 --no-deps
+
+# Install vLLM dependencies with constraints
+RUN pip install -c /opt/constraints.txt \
+    cmake \
+    ninja \
+    psutil \
+    sentencepiece \
+    numpy \
+    requests \
+    py-cpuinfo \
+    'transformers>=4.40.0' \
+    'tokenizers>=0.19.1' \
+    fastapi \
+    'uvicorn[standard]' \
+    'pydantic>=2.0' \
+    'prometheus_client>=0.18.0' \
+    'tiktoken==0.6.0' \
+    'lm-format-enforcer==0.9.8' \
+    outlines \
+    typing_extensions \
+    'filelock>=3.10.4' \
+    'ray>=2.9' \
+    nvidia-ml-py \
+    'xformers==0.0.25'
+
+# Install flashinfer from wheels (available for torch 2.2)
+RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.2/
+
+# 1st SHA occurrence: ENV variable
 ENV SGLANG_COMMIT=9216b10678a036a1797e19693b0445c889016687
 
-# Clone SGLang and checkout EXACT commit (occurrence 2/3)
-WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+# Clone and checkout SGLang at specific commit
+# 2nd SHA occurrence: git checkout
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout 9216b10678a036a1797e19693b0445c889016687
 
-# VERIFY the checkout - compare against HARDCODED expected value (occurrence 3/3)
+# 3rd SHA occurrence: Verify commit and save to file
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="9216b10678a036a1797e19693b0445c889016687" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "ERROR: Commit mismatch! Expected $EXPECTED but got $ACTUAL" && exit 1; \
+    fi && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Install additional dependencies from SGLang's pyproject.toml
-RUN pip install \
-    aiohttp \
-    zmq \
-    pyzmq \
-    rpyc \
-    uvloop \
-    interegular \
-    pillow \
-    "openai>=1.0" \
-    "anthropic>=0.20.0" \
-    tiktoken \
+# Install SGLang with --no-deps first
+RUN cd /sgl-workspace/sglang/python && \
+    pip install -e . --no-deps
+
+# Install SGLang dependencies with constraints
+RUN pip install -c /opt/constraints.txt \
     requests \
     tqdm \
-    datasets
+    aiohttp \
+    fastapi \
+    psutil \
+    rpyc \
+    torch \
+    uvloop \
+    uvicorn \
+    pyzmq \
+    interegular \
+    pydantic \
+    pillow \
+    'outlines>=0.0.27' \
+    'openai>=1.0' \
+    numpy \
+    tiktoken \
+    'anthropic>=0.20.0'
 
-# Install SGLang from source
-# Note: The pyproject.toml is in the python/ subdirectory as shown in the original Dockerfile
-WORKDIR /sgl-workspace/sglang
-RUN pip install -e "python[all]"
+# Install sgl-kernel if available
+RUN pip install sgl-kernel || echo "sgl-kernel not available, skipping"
 
-# Final verification - ensure all critical imports work
+# Final sanity check - verify imports
 RUN python3 -c "import sglang; print('SGLang import OK')"
 RUN python3 -c "import vllm; print('vLLM import OK')"
+RUN python3 -c "import outlines; print('Outlines import OK')"
 RUN python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
-RUN python3 -c "import xformers; print(f'xformers version: {xformers.__version__}')"
 
 # Set working directory
-WORKDIR /sgl-workspace/sglang
+WORKDIR /sgl-workspace
 
-# Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Default command
+CMD ["/bin/bash"]

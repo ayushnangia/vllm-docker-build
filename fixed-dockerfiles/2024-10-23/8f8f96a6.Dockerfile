@@ -1,152 +1,164 @@
-# Fixed Dockerfile for SGLang commit 8f8f96a6217ea737c94e7429e480196319594459
-# Date: 2024-10-23
-# SGLang version: 0.3.4.post1
-# vLLM: 0.6.3.post1
-# torch: 2.5.1 (better compatibility with vLLM 0.6.x)
+# SGLang Dockerfile for commit 8f8f96a6217ea737c94e7429e480196319594459 (2024-10-23)
+# Based on discovered dependencies via WebFetch/WebSearch
 
 FROM nvidia/cuda:12.1.1-devel-ubuntu20.04
 
+# Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TORCH_CUDA_ARCH_LIST="9.0"
-
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    git curl wget sudo libibverbs-dev \
-    build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
-    libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev \
-    cmake ninja-build \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build Python 3.10 from source (Ubuntu 20.04 deadsnakes PPA is broken)
-RUN wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz \
-    && tar -xf Python-3.10.14.tgz \
-    && cd Python-3.10.14 \
-    && ./configure --enable-optimizations --enable-shared \
-    && make -j$(nproc) \
-    && make altinstall \
-    && ldconfig \
-    && ln -sf /usr/local/bin/python3.10 /usr/bin/python3 \
-    && ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 \
-    && cd .. && rm -rf Python-3.10.14*
-
-# Verify Python installation
-RUN python3 --version && pip3 --version
-
-# Upgrade pip and essential packages
-RUN pip3 install --upgrade pip setuptools wheel
-
-# Pre-install torch 2.5.1 with CUDA 12.1 BEFORE other packages
-RUN pip3 install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-
-# Install numpy and packaging first (needed for builds)
-RUN pip3 install numpy packaging
-
-# Build flashinfer from source (v0.1.6 for better compatibility)
-RUN pip3 install ninja pybind11 && \
-    git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
-    cd /tmp/flashinfer && \
-    git checkout v0.1.6 && \
-    cd python && \
-    TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=$(nproc) pip3 install --no-build-isolation . && \
-    cd / && rm -rf /tmp/flashinfer
-
-# Install xformers compatible with torch 2.5.x
-RUN pip3 install xformers==0.0.28.post3 --index-url https://download.pytorch.org/whl/cu121
-
-# Install vLLM 0.6.3.post1 with --no-deps to avoid dependency conflicts
-RUN pip3 install vllm==0.6.3.post1 --no-deps
-
-# Install vLLM dependencies manually (excluding torch and xformers which we already installed)
-RUN pip3 install \
-    "nvidia-ml-py" \
-    "psutil" \
-    "ray>=2.9" \
-    "sentencepiece" \
-    "transformers>=4.45" \
-    "fastapi" \
-    "uvicorn[standard]" \
-    "pydantic>=2.0" \
-    "prometheus-client>=0.18.0" \
-    "prometheus-fastapi-instrumentator>=7.0.0" \
-    "tiktoken>=0.6.0" \
-    "lm-format-enforcer==0.10.9" \
-    "outlines>=0.0.43" \
-    "typing_extensions>=4.10" \
-    "filelock>=3.10.4" \
-    "pyzmq" \
-    "msgspec" \
-    "gguf==0.9.1"
-
-# Install sgl-kernel from PyPI (version available)
-RUN pip3 install sgl-kernel==0.3.4.post1
-
-# Install other SGLang dependencies
-RUN pip3 install \
-    "aiohttp" \
-    "decord" \
-    "hf_transfer" \
-    "huggingface_hub" \
-    "interegular" \
-    "orjson" \
-    "pillow" \
-    "python-multipart" \
-    "torchao" \
-    "uvloop" \
-    "modelscope" \
-    "openai>=1.0" \
-    "anthropic>=0.20.0" \
-    "litellm>=1.0.0" \
-    "datamodel_code_generator" \
-    "requests" \
-    "tqdm"
-
-# HARDCODE the commit SHA (occurrence 1 of 3)
+ENV MAX_JOBS=96
+# 1st hardcoded SHA occurrence
 ENV SGLANG_COMMIT=8f8f96a6217ea737c94e7429e480196319594459
 
-# Clone SGLang repository and checkout EXACT commit (occurrence 2 of 3)
+# Install system dependencies and Python 3.10
+RUN echo 'tzdata tzdata/Areas select America' | debconf-set-selections && \
+    echo 'tzdata tzdata/Zones/America select Los_Angeles' | debconf-set-selections && \
+    apt-get update -y && \
+    apt-get install -y \
+        software-properties-common \
+        build-essential \
+        cmake \
+        curl \
+        git \
+        wget \
+        sudo \
+        vim \
+        libnccl2 \
+        libnccl-dev \
+        libibverbs-dev && \
+    add-apt-repository ppa:deadsnakes/ppa -y && \
+    apt-get update -y && \
+    apt-get install -y python3.10 python3.10-dev python3.10-distutils && \
+    update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 && \
+    update-alternatives --set python3 /usr/bin/python3.10 && \
+    curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py && \
+    python3 get-pip.py && \
+    rm get-pip.py && \
+    python3 --version && \
+    python3 -m pip --version && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip and install build tools
+RUN python3 -m pip install --upgrade pip setuptools wheel packaging
+
+# Install PyTorch 2.4.0 and related packages (vLLM requirement)
+RUN python3 -m pip install --no-cache-dir \
+    torch==2.4.0 \
+    torchvision==0.19.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install xformers compatible with torch 2.4.0
+RUN python3 -m pip install --no-cache-dir xformers==0.0.27.post2
+
+# Create constraints file with discovered versions for October 2024
+RUN cat > /opt/constraints.txt <<'EOF'
+# Versions discovered from PyPI for 2024-10-23 era
+# vLLM 0.6.3.post1 requires: pydantic>=2.9, fastapi>=0.107.0,!=0.113.*,!=0.114.0
+# outlines must be <0.1 for vLLM compatibility
+fastapi==0.115.3
+uvicorn==0.32.0
+pydantic==2.9.2
+typing_extensions==4.12.2
+outlines==0.0.44
+pyzmq==26.2.0
+uvloop==0.20.0
+aiohttp==3.10.10
+orjson==3.10.7
+psutil==6.0.0
+pillow==10.4.0
+packaging==24.1
+huggingface_hub==0.25.2
+transformers==4.45.2
+tokenizers==0.20.0
+protobuf==5.28.2
+einops==0.8.0
+pyyaml==6.0.2
+msgspec==0.18.6
+filelock==3.16.1
+tqdm==4.66.5
+numpy==1.26.4
+requests==2.32.3
+sentencepiece==0.2.0
+py-cpuinfo==9.0.0
+tiktoken==0.7.0
+mistral_common==1.4.4
+importlib_metadata==8.5.0
+prometheus_client==0.21.0
+prometheus-fastapi-instrumentator==7.0.0
+EOF
+
+# Install vLLM 0.6.3.post1 with --no-deps to avoid conflicts
+RUN python3 -m pip install --no-cache-dir vllm==0.6.3.post1 --no-deps
+
+# Install vLLM dependencies using constraints
+RUN python3 -m pip install --no-cache-dir -c /opt/constraints.txt \
+    psutil sentencepiece numpy requests tqdm py-cpuinfo \
+    transformers tokenizers protobuf \
+    fastapi aiohttp openai uvicorn pydantic pillow \
+    prometheus_client prometheus-fastapi-instrumentator tiktoken \
+    lm-format-enforcer==0.10.6 outlines typing_extensions filelock \
+    partial-json-parser pyzmq msgspec gguf==0.10.0 importlib_metadata \
+    mistral_common pyyaml einops compressed-tensors==0.6.0 \
+    nvidia-ml-py ray
+
+# Install flashinfer from custom index
+RUN python3 -m pip install --no-cache-dir \
+    flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
+
+# Create workspace directory
 WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+
+# Clone SGLang repository and checkout specific commit
+# 2nd hardcoded SHA occurrence
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout 8f8f96a6217ea737c94e7429e480196319594459
 
-# VERIFY the checkout - compare against HARDCODED expected value (occurrence 3 of 3)
+# Verify commit SHA and write to file
+# 3rd hardcoded SHA occurrence
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="8f8f96a6217ea737c94e7429e480196319594459" && \
-    echo "Expected: $EXPECTED" && \
-    echo "Actual:   $ACTUAL" && \
-    test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
-    echo "$ACTUAL" > /opt/sglang_commit.txt && \
-    echo "Verified: SGLang at commit $ACTUAL"
+    if [ "$ACTUAL" != "$EXPECTED" ]; then \
+        echo "ERROR: Expected commit $EXPECTED but got $ACTUAL" && exit 1; \
+    fi && \
+    echo "$ACTUAL" > /opt/sglang_commit.txt
 
-# Patch pyproject.toml to remove already-installed dependencies
-WORKDIR /sgl-workspace/sglang/python
-RUN sed -i 's/"flashinfer[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"flashinfer_python[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"sgl-kernel[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"vllm[^"]*",*//g' pyproject.toml && \
-    sed -i 's/"torch[^"]*",*//g' pyproject.toml
+# Install SGLang dependencies first (using constraints)
+RUN python3 -m pip install --no-cache-dir -c /opt/constraints.txt \
+    aiohttp decord fastapi hf_transfer huggingface_hub interegular \
+    orjson packaging pillow psutil pydantic python-multipart \
+    torchao uvicorn uvloop pyzmq outlines modelscope \
+    openai tiktoken anthropic litellm
 
-# Install SGLang from checked-out source (pyproject.toml is in python/ subdirectory)
-WORKDIR /sgl-workspace/sglang
-RUN pip3 install -e "python[all]"
+# Install sgl-kernel from PyPI (version 0.3.4.post1 available)
+RUN python3 -m pip install --no-cache-dir sgl-kernel==0.3.4.post1
 
-# Install triton-nightly for better performance
-RUN pip3 uninstall -y triton triton-nightly || true && \
-    pip3 install --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+# Install SGLang in editable mode with --no-deps
+RUN cd /sgl-workspace/sglang/python && \
+    python3 -m pip install -e . --no-deps
 
-# Verify all critical imports work
-RUN python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import torch; print(f'Torch version: {torch.__version__}')" && \
-    python3 -c "import flashinfer; print('Flashinfer import OK')" && \
+# Additional packages for MiniCPM models
+RUN python3 -m pip install --no-cache-dir datamodel_code_generator
+
+# Final sanity check - verify all critical imports work
+RUN python3 -c "import torch; print(f'PyTorch: {torch.__version__}')" && \
     python3 -c "import vllm; print('vLLM import OK')" && \
-    python3 -c "import sgl_kernel; print('sgl-kernel import OK')"
+    python3 -c "import sglang; print('SGLang import OK')" && \
+    python3 -c "import flashinfer; print('Flashinfer import OK')" && \
+    python3 -c "import outlines; print('Outlines import OK')" && \
+    python3 -c "import pydantic; print(f'Pydantic: {pydantic.VERSION}')" && \
+    python3 -c "import fastapi; print('FastAPI import OK')"
 
-# Clean pip cache
-RUN pip3 cache purge
+# Clear pip cache
+RUN python3 -m pip cache purge
 
-# Set working directory
-WORKDIR /sgl-workspace/sglang
+# Set interactive mode for runtime
+ENV DEBIAN_FRONTEND=interactive
 
-# Set entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Default working directory
+WORKDIR /sgl-workspace
+
+# Entry point
+CMD ["/bin/bash"]
