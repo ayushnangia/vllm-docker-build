@@ -35,6 +35,7 @@ RUN pip3 install ninja numpy packaging && \
 RUN pip3 install vllm==0.4.2 --no-deps
 
 # Install vLLM dependencies manually (from requirements-cuda.txt and requirements-common.txt)
+# CRITICAL: FastAPI >= 0.126.0 forces pydantic v2, so pin FastAPI < 0.126 for pydantic v1
 RUN pip3 install \
     "cmake>=3.21" \
     ninja \
@@ -45,7 +46,7 @@ RUN pip3 install \
     py-cpuinfo \
     "transformers>=4.40.0" \
     "tokenizers>=0.19.1" \
-    fastapi \
+    "fastapi<0.126.0" \
     openai \
     "uvicorn[standard]" \
     "pydantic>=1.10,<2.0" \
@@ -89,7 +90,7 @@ RUN cd /sgl-workspace/sglang && \
 # Install additional SGLang dependencies
 RUN pip3 install \
     aiohttp \
-    zmq \
+    pyzmq \
     rpyc \
     interegular \
     pillow \
@@ -101,8 +102,9 @@ RUN pip3 install \
 WORKDIR /sgl-workspace/sglang
 RUN pip3 install -e "python[all]"
 
-# Force pydantic v1 (some transitive dep may have pulled v2)
-RUN pip3 install "pydantic>=1.10,<2.0" "typing_extensions>=4.5.0,<4.12.0"
+# Force pydantic v1 - uninstall any v2 bits that snuck in, reinstall v1
+RUN pip3 uninstall -y pydantic pydantic-core 2>/dev/null || true && \
+    pip3 install "pydantic>=1.10,<2.0" "typing_extensions>=4.5.0,<4.12.0"
 
 # Replace triton with triton-nightly for better compatibility
 RUN pip3 uninstall -y triton triton-nightly || true && \
