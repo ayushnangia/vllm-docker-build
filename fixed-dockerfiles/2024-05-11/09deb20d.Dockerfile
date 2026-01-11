@@ -54,6 +54,7 @@ RUN pip install -c /opt/constraints-2024-05.txt \
     prometheus_client prometheus-fastapi-instrumentator>=7.0.0 \
     "ray>=2.9" nvidia-ml-py openai tiktoken==0.6.0 \
     lm-format-enforcer==0.9.8 cmake>=3.21 \
+    "vllm-nccl-cu12>=2.18,<2.19" \
     outlines==0.0.34
 
 # ---- SGLang @ exact commit (HARDCODED in 3 places) ----
