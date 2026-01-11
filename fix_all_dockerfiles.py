@@ -331,6 +331,17 @@ RUN pip install -c /opt/constraints.txt <ALL_SGLANG_DEPS_YOU_DISCOVERED>
 - TORCH_CUDA_ARCH_LIST="9.0" (H100)
 - MAX_JOBS=96
 
+### MANDATORY: Add sanity check at end of Dockerfile
+```dockerfile
+# Sanity check - use importlib.metadata for versions (some packages lack __version__)
+RUN python -c "import torch; print('torch', torch.__version__)" && \
+    python -c "import importlib.metadata as m; print('pydantic', m.version('pydantic')); print('typing_extensions', m.version('typing_extensions')); print('outlines', m.version('outlines')); print('fastapi', m.version('fastapi'))" && \
+    python -c "import vllm; print('vllm import OK')" && \
+    python -c "import flashinfer; print('flashinfer import OK')" && \
+    python -c "import sglang; print('sglang import OK')"
+```
+This catches missing deps immediately during build, not at runtime.
+
 ---
 
 ## FULL COMMIT SHA:
