@@ -1,5 +1,5 @@
 # SGLang @ 09deb20d (2024-05-11 era)
-# Time-frozen deps: CUDA 12.1 + torch 2.3.0 + vLLM 0.4.2 + outlines 0.0.39 + pydantic 2.7.1
+# Time-frozen deps: CUDA 12.1 + torch 2.3.0 + vLLM 0.4.2 + outlines 0.0.34 + pydantic 2.7.1
 
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
@@ -22,12 +22,12 @@ RUN cat > /opt/constraints-2024-05.txt <<'EOF'
 fastapi==0.111.0
 uvicorn==0.29.0
 
-# Pydantic v2 era (May 2024-ish) - outlines 0.0.39 requires pydantic v2
+# Pydantic v2 era (May 2024-ish)
 pydantic==2.7.1
 typing_extensions==4.11.0
 
-# SGLang's constrained decoding backend
-outlines==0.0.39
+# vLLM 0.4.2 requires outlines==0.0.34 (not 0.0.39!)
+outlines==0.0.34
 
 # misc
 pyzmq==26.0.3
@@ -46,12 +46,15 @@ RUN pip install ninja numpy packaging && \
 # Install vLLM wheel without letting it drag modern deps; we install its Python deps pinned.
 RUN pip install vllm==0.4.2 --no-deps
 
-# vLLM runtime deps (keep this set minimal; add more only if you hit ImportError)
+# vLLM runtime deps (from vLLM 0.4.2 requirements)
 RUN pip install -c /opt/constraints-2024-05.txt \
     numpy requests psutil sentencepiece py-cpuinfo filelock packaging \
     "transformers==4.40.2" "tokenizers==0.19.1" \
     "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==2.7.1 \
-    prometheus_client
+    prometheus_client prometheus-fastapi-instrumentator>=7.0.0 \
+    "ray>=2.9" nvidia-ml-py openai tiktoken==0.6.0 \
+    lm-format-enforcer==0.9.8 cmake>=3.21 \
+    outlines==0.0.34
 
 # ---- SGLang @ exact commit (HARDCODED in 3 places) ----
 # 1st occurrence: ENV
@@ -77,10 +80,10 @@ RUN cd /sgl-workspace/sglang && \
 RUN pip install -e /sgl-workspace/sglang/python --no-deps
 
 # SGLang srt-ish deps (matching pyproject extras, but pinned)
+# outlines already installed with vLLM deps (0.0.34 as vLLM requires)
 RUN pip install -c /opt/constraints-2024-05.txt \
     aiohttp rpyc uvloop interegular pillow packaging \
-    pyzmq \
-    outlines==0.0.39
+    pyzmq
 
 # Sanity check - use importlib.metadata for versions (some packages lack __version__)
 RUN python -c "import torch; print('torch', torch.__version__)" && \
