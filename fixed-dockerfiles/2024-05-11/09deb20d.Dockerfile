@@ -82,8 +82,9 @@ RUN pip install -c /opt/constraints-2024-05.txt \
     outlines==0.0.39
 
 # Sanity check - verify versions to catch drift early
+# Use importlib.metadata for typing_extensions (no __version__ attr in some versions)
 RUN python -c "import torch; print('torch', torch.__version__)" && \
-    python -c "import pydantic, typing_extensions; print('pydantic', pydantic.__version__); print('typing_extensions', typing_extensions.__version__)" && \
+    python -c "import importlib.metadata as m; print('pydantic', m.version('pydantic')); print('typing_extensions', m.version('typing_extensions'))" && \
     python -c "import outlines; print('outlines', outlines.__version__)" && \
     python -c "import vllm; print('vllm import OK')" && \
     python -c "import flashinfer; print('flashinfer import OK')" && \
