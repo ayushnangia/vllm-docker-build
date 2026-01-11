@@ -71,46 +71,100 @@ You MUST use WebFetch and WebSearch extensively to discover:
 1. What versions existed at the commit date
 2. What each package's dependencies are
 3. Whether packages are compatible with each other
+4. What torch/CUDA versions each package supports
 
 ---
 
-## STEP 0: DISCOVER DEPENDENCY REQUIREMENTS FROM PYPI (MANDATORY)
+## STEP 0: DISCOVER ALL DEPENDENCY VERSIONS FROM PYPI (MANDATORY)
 
-For EACH key package (outlines, pydantic, fastapi, typing_extensions), you MUST:
+For EVERY package in pyproject.toml, check PyPI to find:
+- Release date (must be ON OR BEFORE {pr_date})
+- Dependencies (what does it require?)
+- Compatibility (what torch/python versions?)
 
-### 0a. Check PyPI release history to find versions from the commit era
+### 0a. Check PyPI release history for ALL key packages
 ```
+WebFetch https://pypi.org/project/transformers/#history
+WebFetch https://pypi.org/project/tokenizers/#history
+WebFetch https://pypi.org/project/vllm/#history
 WebFetch https://pypi.org/project/outlines/#history
 WebFetch https://pypi.org/project/pydantic/#history
 WebFetch https://pypi.org/project/fastapi/#history
 WebFetch https://pypi.org/project/typing-extensions/#history
+WebFetch https://pypi.org/project/xformers/#history
+WebFetch https://pypi.org/project/ray/#history
+WebFetch https://pypi.org/project/uvicorn/#history
+WebFetch https://pypi.org/project/aiohttp/#history
+WebFetch https://pypi.org/project/numpy/#history
 ```
 
-### 0b. CRITICAL: Check what pydantic version outlines requires
-For example, if pyproject.toml says outlines==0.0.39:
+### 0b. For EACH package version in pyproject.toml, check its dependencies
+Example: if pyproject.toml says outlines==0.0.39:
 ```
 WebFetch https://pypi.org/project/outlines/0.0.39/
 ```
-Look at the "Requires" section - does it need pydantic v1 or v2?
+Look at "Requires-Dist" - what pydantic version? what torch version?
 
-### 0c. Check for known breaking changes
+Example: if pyproject.toml says transformers==4.40.2:
+```
+WebFetch https://pypi.org/project/transformers/4.40.2/
+```
+What tokenizers version does it need?
+
+Example: if pyproject.toml says vllm==0.4.2:
+```
+WebFetch https://pypi.org/project/vllm/0.4.2/
+```
+What torch version? What xformers version? What ray version?
+
+### 0c. Check flashinfer compatibility
+```
+WebFetch https://flashinfer.ai/whl/cu121/torch2.3/
+WebFetch https://flashinfer.ai/whl/cu121/torch2.4/
+WebFetch https://flashinfer.ai/whl/cu124/torch2.5/
+WebFetch https://flashinfer.ai/whl/cu124/torch2.6/
+WebSearch "flashinfer torch 2.3 compatibility"
+WebSearch "flashinfer cuda 12.1 torch version"
+```
+
+### 0d. Check xformers-torch compatibility
+```
+WebSearch "xformers 0.0.26 torch version"
+WebSearch "xformers torch compatibility matrix"
+WebFetch https://pypi.org/project/xformers/0.0.26.post1/
+```
+
+### 0e. Check transformers-tokenizers compatibility
+```
+WebSearch "transformers 4.40 tokenizers version"
+WebFetch https://pypi.org/project/transformers/4.40.2/
+```
+Transformers pins specific tokenizers versions - MUST match!
+
+### 0f. Check vLLM dependencies
+```
+WebSearch "vllm 0.4.2 torch version requirement"
+WebSearch "vllm 0.4.2 xformers version"
+WebSearch "vllm 0.4.2 ray version"
+```
+
+### 0g. Check for breaking changes
 ```
 WebSearch "fastapi pydantic v2 migration version"
 WebSearch "fastapi 0.126 pydantic requirement"
 WebSearch "typing_extensions Sentinel version"
+WebSearch "numpy 2.0 breaking changes"
+WebSearch "transformers 4.45 breaking changes"
+WebSearch "outlines 0.1 api changes"
+WebSearch "outlines 1.0 breaking changes"
 ```
 
-Key facts to discover:
-- FastAPI >= 0.126.0 FORCES pydantic v2 (drops v1 support)
-- typing_extensions.Sentinel was added in version 4.14.0 (June 2025)
-- If you see Sentinel errors, your typing_extensions is too new
-
-### 0d. Find the RIGHT pydantic version for the era
-If outlines needs pydantic v2, find pydantic 2.x from that era:
+### 0h. Check torch wheel availability
 ```
-WebFetch https://pypi.org/project/pydantic/2.7.1/
+WebFetch https://download.pytorch.org/whl/cu121/
+WebFetch https://download.pytorch.org/whl/cu124/
+WebSearch "torch 2.3.0 cuda 12.1 wheel"
 ```
-Check release date - pydantic 2.7.1 is April 23, 2024.
 
 ---
 
@@ -122,23 +176,34 @@ WORK_DIR="/tmp/explore-{short_hash}"
 rm -rf "$WORK_DIR" && mkdir -p "$WORK_DIR" && cd "$WORK_DIR"
 ```
 
-### 1b. Clone SGLang at this commit
+### 1b. Clone SGLang at this commit and read ALL dependency specs
 ```bash
 git clone https://github.com/sgl-project/sglang.git sglang
 cd sglang && git checkout {commit_sha}
 cat python/pyproject.toml
 ```
+Record EVERY version constraint you see!
 
-### 1c. Clone vLLM at required version
+### 1c. Clone vLLM at required version and read ALL its requirements
 ```bash
 cd "$WORK_DIR"
-# Use version from SGLang's pyproject.toml
 git clone --depth 1 --branch v<VERSION> https://github.com/vllm-project/vllm.git vllm
-cat vllm/requirements*.txt
-cat vllm/pyproject.toml | head -100
+cat vllm/requirements-cuda.txt
+cat vllm/requirements-common.txt
+cat vllm/requirements.txt
+cat vllm/pyproject.toml
+```
+Record: torch, xformers, ray, transformers, pydantic versions!
+
+### 1d. Clone flashinfer to check torch compatibility
+```bash
+cd "$WORK_DIR"
+git clone https://github.com/flashinfer-ai/flashinfer.git flashinfer
+cd flashinfer && git tag | head -20
+cat python/pyproject.toml 2>/dev/null || cat pyproject.toml
 ```
 
-### 1d. Cleanup
+### 1e. Cleanup
 ```bash
 rm -rf "$WORK_DIR"
 ```
@@ -147,11 +212,16 @@ rm -rf "$WORK_DIR"
 
 ## STEP 2: CHECK WHEEL AVAILABILITY
 
-### flashinfer wheels
+### flashinfer wheels - check ALL torch/CUDA combos
 ```
+WebFetch https://flashinfer.ai/whl/cu121/torch2.1/
+WebFetch https://flashinfer.ai/whl/cu121/torch2.2/
 WebFetch https://flashinfer.ai/whl/cu121/torch2.3/
+WebFetch https://flashinfer.ai/whl/cu121/torch2.4/
+WebFetch https://flashinfer.ai/whl/cu124/torch2.5/
+WebFetch https://flashinfer.ai/whl/cu124/torch2.6/
 ```
-If empty/404 → BUILD FROM SOURCE
+If empty/404 for your torch version → BUILD FROM SOURCE
 
 ### sgl-kernel on PyPI
 ```
@@ -159,21 +229,45 @@ WebFetch https://pypi.org/simple/sgl-kernel/
 ```
 If version not found → BUILD FROM SOURCE
 
+### xformers wheels
+```
+WebSearch "xformers 0.0.26 torch 2.3 cuda 12.1"
+```
+
 ---
 
-## STEP 3: BUILD CONSTRAINTS FILE WITH DISCOVERED VERSIONS
+## STEP 3: BUILD CONSTRAINTS FILE WITH ALL DISCOVERED VERSIONS
 
-Create a constraints file with versions YOU discovered from PyPI:
+Create a constraints file with ALL versions discovered from PyPI:
 
 ```dockerfile
 RUN cat > /opt/constraints.txt <<'EOF'
-# Versions discovered from PyPI for {pr_date} era
-fastapi==<VERSION_YOU_FOUND_ON_PYPI>
-uvicorn==<VERSION_YOU_FOUND_ON_PYPI>
-pydantic==<VERSION_YOU_FOUND_ON_PYPI>  # v1 or v2 based on outlines requirement!
-typing_extensions==<VERSION_YOU_FOUND_ON_PYPI>  # BEFORE 4.14 to avoid Sentinel
-outlines==<VERSION_FROM_PYPROJECT>
-pyzmq==<VERSION_YOU_FOUND_ON_PYPI>
+# === Web framework (discovered from PyPI for {pr_date}) ===
+fastapi==<DISCOVERED>
+uvicorn==<DISCOVERED>
+starlette==<DISCOVERED>
+pydantic==<DISCOVERED>
+typing_extensions==<DISCOVERED>
+
+# === ML framework (discovered from PyPI) ===
+transformers==<DISCOVERED>
+tokenizers==<DISCOVERED>  # MUST match transformers requirement!
+numpy==<DISCOVERED>  # numpy<2 for older code
+
+# === Inference (discovered from PyPI) ===
+outlines==<DISCOVERED>
+xformers==<DISCOVERED>  # MUST match torch version!
+ray==<DISCOVERED>
+
+# === Networking (discovered from PyPI) ===
+aiohttp==<DISCOVERED>
+httpx==<DISCOVERED>
+pyzmq==<DISCOVERED>
+
+# === Other (discovered from PyPI) ===
+pillow==<DISCOVERED>
+interegular==<DISCOVERED>
+rpyc==<DISCOVERED>
 EOF
 ```
 
@@ -181,15 +275,33 @@ EOF
 
 ## STEP 4: WRITE DOCKERFILE
 
-### Base image:
+### Base image (from torch version you discovered):
 - torch 2.1.x-2.3.x: pytorch/pytorch:VERSION-cuda12.1-cudnn8-devel
 - torch 2.4.x-2.5.x: nvidia/cuda:12.1.1-devel-ubuntu20.04
 - torch 2.6.x+: nvidia/cuda:12.4.1-devel-ubuntu22.04
 
+### Install torch FIRST with correct CUDA index:
+```dockerfile
+RUN pip install torch==<DISCOVERED> --index-url https://download.pytorch.org/whl/cu121
+RUN pip install xformers==<DISCOVERED> --index-url https://download.pytorch.org/whl/cu121
+```
+
+### Install flashinfer (wheel or source based on availability check):
+```dockerfile
+# If wheel exists:
+RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
+
+# If no wheel - build from source:
+RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \\
+    cd /tmp/flashinfer && git checkout v<TAG> && \\
+    cd python && TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=96 pip install --no-build-isolation . && \\
+    rm -rf /tmp/flashinfer
+```
+
 ### Install vLLM with --no-deps:
 ```dockerfile
 RUN pip install vllm==<VERSION> --no-deps
-RUN pip install -c /opt/constraints.txt <DEPS_FROM_VLLM_REQUIREMENTS>
+RUN pip install -c /opt/constraints.txt <ALL_VLLM_DEPS_YOU_DISCOVERED>
 ```
 
 ### HARDCODE commit SHA in EXACTLY 3 places:
@@ -212,7 +324,7 @@ RUN cd /sgl-workspace/sglang && \\
 ### Install SGLang with --no-deps:
 ```dockerfile
 RUN pip install -e /sgl-workspace/sglang/python --no-deps
-RUN pip install -c /opt/constraints.txt <DEPS_FROM_PYPROJECT>
+RUN pip install -c /opt/constraints.txt <ALL_SGLANG_DEPS_YOU_DISCOVERED>
 ```
 
 ### Build settings:
@@ -250,15 +362,37 @@ Write to: fixed-dockerfiles/{pr_date}/{short_hash}.Dockerfile
 
 ---
 
-## COMMON PITFALLS TO AVOID
+## CRITICAL COMPATIBILITY RULES (discovered via WebSearch)
 
-- outlines 0.0.39+ requires pydantic v2, NOT v1
-- If you pin pydantic v1 but outlines needs v2, pip will fail
-- typing_extensions >= 4.14 has Sentinel (too new for old pydantic-core)
-- Use typing_extensions 4.11.0 for May 2024 era builds
-- pydantic 2.7.1 (April 2024) works with typing_extensions 4.11.0
+### Pydantic v1 vs v2:
+- outlines >= 0.0.34 requires pydantic v2
+- FastAPI >= 0.126.0 FORCES pydantic v2 (drops v1)
+- If using pydantic v2, need typing_extensions >= 4.6 but < 4.14
 
-Think step by step. WebFetch/WebSearch FIRST. Use discovered versions. Verify everything.
+### typing_extensions versions:
+- Sentinel was added in 4.14.0 (June 2025) - too new for older pydantic-core
+- For May 2024 builds, use typing_extensions 4.11.0
+
+### transformers-tokenizers:
+- transformers 4.40.x needs tokenizers 0.19.x
+- transformers 4.44.x needs tokenizers 0.19.x
+- transformers 4.48.x needs tokenizers 0.21.x
+- ALWAYS check the specific version's requirements!
+
+### xformers-torch:
+- xformers 0.0.26.post1 works with torch 2.3.x
+- xformers 0.0.27 works with torch 2.4.x
+- ALWAYS verify via WebSearch!
+
+### numpy versions:
+- numpy >= 2.0 has breaking changes
+- Older code needs numpy < 2.0
+
+### flashinfer-torch:
+- Check flashinfer.ai/whl/ for available wheels
+- If no wheel, build from source with matching torch
+
+Think step by step. WebFetch/WebSearch EXTENSIVELY. Verify ALL compatibility. Use ONLY discovered versions.
 '''
 
 
