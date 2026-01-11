@@ -50,7 +50,8 @@ RUN pip install vllm==0.4.2 --no-deps
 RUN pip install -c /opt/constraints-2024-05.txt \
     numpy requests psutil sentencepiece py-cpuinfo filelock packaging \
     "transformers==4.40.2" "tokenizers==0.19.1" \
-    "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==2.7.1
+    "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==2.7.1 \
+    prometheus_client
 
 # ---- SGLang @ exact commit (HARDCODED in 3 places) ----
 # 1st occurrence: ENV
