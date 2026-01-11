@@ -1,74 +1,67 @@
-# Fixed Dockerfile for SGLang commit 09deb20d (2024-05-11)
-# Triton Era - uses torch 2.3.0 + flashinfer 0.0.4+ + vLLM 0.4.2
+# SGLang @ 09deb20d (2024-05-11 era)
+# Time-frozen deps: CUDA 12.1 + torch 2.3.0 + vLLM 0.4.2 + outlines 0.0.x + pydantic v1
 
-# Base image for torch 2.3.0 with CUDA 12.1
 FROM pytorch/pytorch:2.3.0-cuda12.1-cudnn8-devel
 
-# Environment setup
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TORCH_CUDA_ARCH_LIST="9.0"
+ENV DEBIAN_FRONTEND=noninteractive \
+    TORCH_CUDA_ARCH_LIST="9.0" \
+    PIP_NO_CACHE_DIR=1
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    git curl wget build-essential ninja-build \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git build-essential ninja-build curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip
-RUN pip3 install --upgrade pip setuptools wheel
+RUN python -m pip install --upgrade pip setuptools wheel
 
-# Pre-install torch 2.3.0 (already in base image, but ensure correct version)
-RUN pip3 install torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121
+# Ensure CUDA wheels index for torch ecosystem packages
+RUN pip install --index-url https://download.pytorch.org/whl/cu121 torch==2.3.0
+RUN pip install --index-url https://download.pytorch.org/whl/cu121 xformers==0.0.26.post1
 
-# Install xformers compatible with torch 2.3.0
-RUN pip3 install xformers==0.0.26.post1 --index-url https://download.pytorch.org/whl/cu121
+# ---- Pin the "May 2024" userland deps so pip doesn't pull 2026 versions ----
+RUN cat > /opt/constraints-2024-05.txt <<'EOF'
+# Web stack (May 2024)
+fastapi==0.111.0
+uvicorn==0.29.0
+pydantic==1.10.13
 
-# Build flashinfer from source (version 0.0.4 requirement, build v0.1.2)
-RUN pip3 install ninja numpy packaging && \
+# Structured decoding backend (avoid outlines 0.1+ / 1.x API drift)
+outlines==0.0.39
+
+# Common footguns
+typing_extensions==4.11.0
+pyzmq==26.0.3
+EOF
+
+# ---- flashinfer (SGLang wants flashinfer>=0.0.4; build from source for Hopper) ----
+RUN pip install ninja numpy packaging && \
     git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
     cd /tmp/flashinfer && \
     git checkout v0.1.2 && \
     cd python && \
-    TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=96 pip3 install --no-build-isolation . && \
-    cd / && rm -rf /tmp/flashinfer
+    TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=96 pip install --no-build-isolation . && \
+    rm -rf /tmp/flashinfer
 
-# Install vLLM 0.4.2 with --no-deps to avoid torch version conflicts
-RUN pip3 install vllm==0.4.2 --no-deps
+# ---- vLLM 0.4.2 (May 5, 2024) ----
+# Install vLLM wheel without letting it drag modern deps; we install its Python deps pinned.
+RUN pip install vllm==0.4.2 --no-deps
 
-# Install vLLM dependencies manually (from requirements-cuda.txt and requirements-common.txt)
-# CRITICAL: FastAPI >= 0.126.0 forces pydantic v2, so pin FastAPI < 0.126 for pydantic v1
-RUN pip3 install \
-    "cmake>=3.21" \
-    ninja \
-    psutil \
-    sentencepiece \
-    numpy \
-    requests \
-    py-cpuinfo \
-    "transformers>=4.40.0" \
-    "tokenizers>=0.19.1" \
-    "fastapi<0.126.0" \
-    openai \
-    "uvicorn[standard]" \
-    "pydantic>=1.10,<2.0" \
-    "prometheus_client>=0.18.0" \
-    "prometheus-fastapi-instrumentator>=7.0.0" \
-    "tiktoken==0.6.0" \
-    "typing_extensions>=4.5.0,<4.12.0" \
-    "filelock>=3.10.4" \
-    "ray>=2.9" \
-    nvidia-ml-py \
-    "vllm-nccl-cu12>=2.18,<2.19"
+# vLLM runtime deps (keep this set minimal; add more only if you hit ImportError)
+RUN pip install -c /opt/constraints-2024-05.txt \
+    numpy requests psutil sentencepiece py-cpuinfo filelock packaging \
+    "transformers==4.40.2" "tokenizers==0.19.1" \
+    "uvicorn[standard]==0.29.0" fastapi==0.111.0 pydantic==1.10.13
 
-# HARDCODE the commit SHA (1st occurrence)
+# ---- SGLang @ exact commit (HARDCODED in 3 places) ----
+# 1st occurrence: ENV
 ENV SGLANG_COMMIT=09deb20deef8181a23f66c933ea74b86fee47366
 
-# Clone SGLang and checkout EXACT commit (2nd occurrence - hardcoded)
 WORKDIR /sgl-workspace
-RUN git clone https://github.com/sgl-project/sglang.git sglang && \
+# 2nd occurrence: git checkout
+RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout 09deb20deef8181a23f66c933ea74b86fee47366
 
-# VERIFY commit - compare against HARDCODED value (3rd occurrence)
+# 3rd occurrence: verification
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="09deb20deef8181a23f66c933ea74b86fee47366" && \
@@ -78,50 +71,21 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove already-installed deps (flashinfer, vllm, pydantic)
-RUN cd /sgl-workspace/sglang && \
-    sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"pydantic[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/,\s*,/,/g' python/pyproject.toml && \
-    sed -i 's/\[,/[/g' python/pyproject.toml && \
-    sed -i 's/,\]/]/g' python/pyproject.toml
+# Install SGLang itself without deps (we control deps explicitly)
+RUN pip install -e /sgl-workspace/sglang/python --no-deps
 
-# Install additional SGLang dependencies
-RUN pip3 install \
-    aiohttp \
+# SGLang srt-ish deps (matching pyproject extras, but pinned)
+RUN pip install -c /opt/constraints-2024-05.txt \
+    aiohttp rpyc uvloop interegular pillow packaging \
     pyzmq \
-    rpyc \
-    interegular \
-    pillow \
-    packaging \
-    datasets \
-    uvloop
+    outlines==0.0.39
 
-# Install SGLang from source (pyproject.toml is in python/ subdirectory)
-WORKDIR /sgl-workspace/sglang
-RUN pip3 install -e "python[all]"
-
-# Force pydantic v1 - uninstall any v2 bits that snuck in, reinstall v1
-RUN pip3 uninstall -y pydantic pydantic-core 2>/dev/null || true && \
-    pip3 install "pydantic>=1.10,<2.0" "typing_extensions>=4.5.0,<4.12.0"
-
-# Replace triton with triton-nightly for better compatibility
-RUN pip3 uninstall -y triton triton-nightly || true && \
-    pip3 install --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
-
-# Verify all imports work
-RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
-    python3 -c "import xformers; print(f'xformers: {xformers.__version__}')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
-    python3 -c "import flashinfer; print('flashinfer import OK')" && \
-    python3 -c "import sglang; print('SGLang import OK')"
-
-# Final verification of commit
-RUN echo "=== Final Commit Verification ===" && \
-    cat /opt/sglang_commit.txt && \
-    echo "=== Installation location ===" && \
-    pip3 show sglang | grep -E "^(Name|Version|Location|Editable)"
+# Sanity check
+RUN python -c "import torch; print('torch', torch.__version__)" && \
+    python -c "import vllm; print('vllm import OK')" && \
+    python -c "import flashinfer; print('flashinfer import OK')" && \
+    python -c "import fastapi, pydantic, outlines; print('fastapi', fastapi.__version__, 'pydantic', pydantic.__version__, 'outlines', outlines.__version__)" && \
+    python -c "import sglang; print('sglang import OK')"
 
 WORKDIR /sgl-workspace/sglang
 ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
