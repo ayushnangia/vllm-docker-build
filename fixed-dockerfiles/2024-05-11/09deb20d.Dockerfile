@@ -77,10 +77,11 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove flashinfer and vllm (already installed)
+# Patch pyproject.toml to remove already-installed deps (flashinfer, vllm, pydantic)
 RUN cd /sgl-workspace/sglang && \
     sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
     sed -i 's/"vllm[^"]*",*//g' python/pyproject.toml && \
+    sed -i 's/"pydantic[^"]*",*//g' python/pyproject.toml && \
     sed -i 's/,\s*,/,/g' python/pyproject.toml && \
     sed -i 's/\[,/[/g' python/pyproject.toml && \
     sed -i 's/,\]/]/g' python/pyproject.toml
@@ -99,6 +100,9 @@ RUN pip3 install \
 # Install SGLang from source (pyproject.toml is in python/ subdirectory)
 WORKDIR /sgl-workspace/sglang
 RUN pip3 install -e "python[all]"
+
+# Force pydantic v1 (some transitive dep may have pulled v2)
+RUN pip3 install "pydantic>=1.10,<2.0" "typing_extensions>=4.5.0,<4.12.0"
 
 # Replace triton with triton-nightly for better compatibility
 RUN pip3 uninstall -y triton triton-nightly || true && \
