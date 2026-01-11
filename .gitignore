@@ -6,3 +6,6 @@
 vllm/
 sglang/
 .env
+__pycache__/
+sglang.git/
+fix-logs/

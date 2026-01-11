@@ -1,7 +1,0 @@
-commit_hash,parent_commit,subject,has_dockerfile,failure_reason
-1bf1cf195302fdff14a4321eb8a17831f5c2fc11,e822e5900b98d89d19e0a293d9ad384f4df2945a,Reduce overhead when `fork(1)` (#375),yes (triton),queued - examples/usage/triton/Dockerfile
-2a754e57b052e249ed4f8572cb6f0069ba6a495e,96c503eb6029d37f896e91466e23469378dfc3dc,2x performance improvement for large prefill & Fix workspace conflicts (#579),yes (triton),queued - examples/usage/triton/Dockerfile
-62757db6f0f09a6dff15b1ee1ac3029602951509,73fa2d49d539fd67548b0458a365528d3e3b6edc,Reduce the overhead when cache is disabled (#1010),yes,FLASHINFER ABI MISMATCH (building)
-6f560c761b2fc2f577682d0cfda62630f37a3bb0,cd6872334e9ead684049b8fccd5f2dac9433b1b4,Improve the control of streaming and improve the first token latency in streaming (#117),no,UNBUILDABLE - no Dockerfile (PR #117 too early)
-a99801e0750f41553fedd02e36f58d835c4d4bd6,4c605235aa832f259e148dfbdce08d9e471b5099,[Performance][PD Disaggregation] optimize TokenToKVPoolAllocator by sorting free pages (#8133),yes,queued - DeepEP/NVSHMEM Dockerfile
-e822e5900b98d89d19e0a293d9ad384f4df2945a,ca4f1ab89c0c9bdd80fdfabcec52968fbde108bb,Optimize radix tree matching (#364),yes (triton),queued - examples/usage/triton/Dockerfile
