@@ -81,14 +81,11 @@ RUN pip install -c /opt/constraints-2024-05.txt \
     pyzmq \
     outlines==0.0.39
 
-# Sanity check - verify versions to catch drift early
-# Use importlib.metadata for typing_extensions (no __version__ attr in some versions)
+# Sanity check - use importlib.metadata for versions (some packages lack __version__)
 RUN python -c "import torch; print('torch', torch.__version__)" && \
-    python -c "import importlib.metadata as m; print('pydantic', m.version('pydantic')); print('typing_extensions', m.version('typing_extensions'))" && \
-    python -c "import outlines; print('outlines', outlines.__version__)" && \
+    python -c "import importlib.metadata as m; print('pydantic', m.version('pydantic')); print('typing_extensions', m.version('typing_extensions')); print('outlines', m.version('outlines')); print('fastapi', m.version('fastapi'))" && \
     python -c "import vllm; print('vllm import OK')" && \
     python -c "import flashinfer; print('flashinfer import OK')" && \
-    python -c "import fastapi; print('fastapi', fastapi.__version__)" && \
     python -c "import sglang; print('sglang import OK')"
 
 WORKDIR /sgl-workspace/sglang
