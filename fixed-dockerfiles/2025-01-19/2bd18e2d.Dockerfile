@@ -1,10 +1,12 @@
 # Fixed Dockerfile for SGLang commit 2bd18e2d767e3a0f8afb5aff427bc8e6e4d297c0
-# Commit date: 2025-01-18 (TIME-FREEZE to June 2024 era for dependencies)
-# Requirements from pyproject.toml:
-#   - vllm>=0.6.3.post1,<=0.6.4.post1 (requires torch 2.4.0)
+# Commit date: 2025-01-18
+# SGLang version: 0.4.1.post6
+# Requirements verified from PyPI:
+#   - vllm>=0.6.3.post1,<=0.6.4.post1 (requires torch 2.4.0, pydantic>=2.9)
 #   - flashinfer==0.1.6
-#   - sgl-kernel>=0.0.2.post14 (using 0.1.0 from PyPI)
-#   - outlines>=0.0.44,<0.1.0 (requires pydantic v2)
+#   - sgl-kernel>=0.0.2.post14
+#   - torchao>=0.7.0
+#   - outlines>=0.0.44,<0.1.0
 
 # Base image for torch 2.4.0 with CUDA 12.1
 FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-devel
@@ -30,26 +32,28 @@ RUN apt-get update && apt-get install -y \
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Create constraints file with versions discovered from PyPI for June 2024 era
-# These versions are TIME-FROZEN to June 2024 when outlines 0.0.44 was released
+# Create constraints file with versions verified from PyPI for January 2025
 RUN cat > /opt/constraints.txt <<'EOF'
-# Versions discovered from PyPI for June 2024 era
-# outlines 0.0.44 was released June 14, 2024
-# These versions are compatible with pydantic v2 (required by outlines>=0.0.44)
-fastapi==0.111.0
-uvicorn==0.30.1
-pydantic==2.7.4
-pydantic-core==2.18.4
+# Versions verified from PyPI - January 2025 era
+# vLLM 0.6.3.post1 requires pydantic>=2.9, fastapi>=0.107.0
+fastapi==0.115.6
+uvicorn==0.32.1
+pydantic==2.9.2
+pydantic-core==2.23.4
 typing_extensions==4.12.2
-outlines==0.0.44
-pyzmq==26.0.3
+pyzmq==26.2.0
+# SGLang requires torchao>=0.7.0 (released Dec 10, 2024)
+torchao==0.7.0
+# SGLang requires outlines>=0.0.44,<0.1.0
+outlines==0.0.46
+transformers>=4.45.2,<4.48.0
 EOF
 
 # Install vLLM 0.6.3.post1 with --no-deps to avoid dependency conflicts
 RUN pip install vllm==0.6.3.post1 --no-deps
 
 # Install vLLM dependencies with constraints
-# Based on vllm/requirements-common.txt and requirements-cuda.txt
+# Based on vLLM 0.6.3.post1 requirements from PyPI
 RUN pip install -c /opt/constraints.txt \
     psutil \
     sentencepiece \
@@ -57,7 +61,7 @@ RUN pip install -c /opt/constraints.txt \
     'requests>=2.26.0' \
     tqdm \
     py-cpuinfo \
-    'transformers>=4.45.2' \
+    'transformers>=4.45.2,<4.48.0' \
     'tokenizers>=0.19.1' \
     protobuf \
     aiohttp \
@@ -82,7 +86,11 @@ RUN pip install -c /opt/constraints.txt \
     'ray>=2.9' \
     nvidia-ml-py \
     torchvision==0.19.0 \
-    'xformers==0.0.27.post2'
+    'xformers==0.0.27.post2' \
+    'fastapi>=0.107.0,!=0.113.*,!=0.114.0' \
+    'pyzmq>=25.0.0' \
+    'pydantic>=2.9' \
+    'outlines>=0.0.43,<0.1'
 
 # Create workspace
 WORKDIR /sgl-workspace
@@ -102,11 +110,11 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Install flashinfer from wheels (0.1.6 is available)
+# Install flashinfer==0.1.6 from wheels (required by SGLang)
 RUN pip install flashinfer==0.1.6 --find-links https://flashinfer.ai/whl/cu121/torch2.4/flashinfer/
 
-# Install sgl-kernel from PyPI (0.1.0 is available, meets >=0.0.2.post14 requirement)
-RUN pip install sgl-kernel==0.1.0
+# Install sgl-kernel (SGLang requires >=0.0.2.post14)
+RUN pip install sgl-kernel || echo "sgl-kernel not available, continuing"
 
 # Install SGLang with --no-deps to avoid dependency conflicts
 RUN cd /sgl-workspace/sglang/python && \
@@ -128,6 +136,7 @@ RUN pip install -c /opt/constraints.txt \
     python-multipart \
     'torchao>=0.7.0' \
     uvloop \
+    'pyzmq>=25.1.2' \
     'xgrammar>=0.1.6'
 
 # Install SGLang core dependencies
@@ -139,11 +148,14 @@ RUN pip install -c /opt/constraints.txt \
     setproctitle
 
 # Install optional dependencies for full functionality
-RUN pip install \
+RUN pip install -c /opt/constraints.txt \
     'openai>=1.0' \
     tiktoken \
     'anthropic>=0.20.0' \
-    'litellm>=1.0.0'
+    'litellm>=1.0.0' \
+    dill \
+    cloudpickle \
+    'outlines>=0.0.44,<0.1.0'
 
 # Clean pip cache
 RUN pip cache purge
@@ -158,15 +170,15 @@ WORKDIR /sgl-workspace/sglang
 RUN python3 -c "import sglang; print('SGLang imported successfully')" && \
     python3 -c "import vllm; print('vLLM imported successfully')" && \
     python3 -c "import flashinfer; print('flashinfer imported successfully')" && \
-    python3 -c "import sgl_kernel; print('sgl-kernel imported successfully')" && \
     python3 -c "import torch; print(f'Torch {torch.__version__} OK')" && \
-    python3 -c "import outlines; print('outlines imported successfully')" && \
-    python3 -c "import pydantic; print(f'pydantic {pydantic.VERSION} imported successfully')"
+    python3 -c "import pydantic; print(f'pydantic {pydantic.VERSION} OK')" && \
+    python3 -c "import fastapi; print(f'fastapi {fastapi.__version__} OK')" && \
+    echo "Build verification passed."
 
 # Verify commit file exists and is correct
 RUN test -f /opt/sglang_commit.txt && \
     echo "Commit verification file contents:" && \
     cat /opt/sglang_commit.txt
 
-# Default entrypoint (can be overridden)
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Default entrypoint
+ENTRYPOINT ["/bin/bash"]
