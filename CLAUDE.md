@@ -18,6 +18,17 @@ python3 local_build.py \
   --project sglang  # or vllm
 ```
 
+### Single Commit Test Build
+```bash
+# Test build without pushing
+python3 local_build.py \
+  --dockerhub-username YOUR_NAME \
+  --batch-size 1 \
+  --no-push \
+  --show-build-logs \
+  --project sglang
+```
+
 Key flags:
 - `--no-push`: Test builds locally without pushing to Docker Hub
 - `--skip-pushed`: Skip commits already on Docker Hub
@@ -62,11 +73,20 @@ Trigger: Actions → "Build vLLM Docker (NVIDIA)" → Run workflow with `batch_s
    - Normalizes Dockerfile syntax (uppercase `AS`, `ENV key=value`)
 5. **Build execution**: Parallel builds via ThreadPoolExecutor with Buildx caching
 
-### Special Commit Handling
+### Special Commit Sets (`local_build.py`)
 
-Some commits need dependencies built from source:
-- `FLASHINFER_FROM_SOURCE_COMMITS`: Commits needing flashinfer built from source (no prebuilt wheels)
-- `SGL_KERNEL_FROM_SOURCE_COMMITS`: Commits needing sgl-kernel built from source
+The build script maintains commit sets requiring special handling:
+
+| Constant | Purpose |
+|----------|---------|
+| `FLASHINFER_FROM_SOURCE_COMMITS` | No prebuilt flashinfer wheels for torch version |
+| `FLASHINFER_ABI_FIX_COMMITS` | Flashinfer wheel ABI mismatch with installed torch |
+| `TRITON_FLASHINFER_FROM_SOURCE_COMMITS` | Old triton-style commits needing flashinfer source build |
+| `PRE_FLASHINFER_TRITON_COMMITS` | Pre-Jan 2024 commits before flashinfer requirement |
+| `SGL_KERNEL_FROM_SOURCE_COMMITS` | sgl-kernel version not on PyPI |
+| `TORCH271_DEP_FIX_COMMITS` | Dependency conflicts with torch 2.7.1 |
+| `SGLANG_047_FLASHINFER_FIX_COMMITS` | SGLang 0.4.7+ flashinfer requires nonexistent torch 2.9 |
+| `LEGACY_CONFIG` | Early 2024 commits with specific base image/torch versions |
 
 ### Key Data Files
 
@@ -74,6 +94,7 @@ Some commits need dependencies built from source:
 |------|---------|
 | `nvidia-sglang-docker.jsonl` | SGLang commits with Dockerfile content |
 | `nvidia-vllm-docker.jsonl` | vLLM commits with Dockerfile content |
+| `data/sglang-h100-32.jsonl` | Alternative dataset |
 | `blacklist.txt` / `blacklist-sglang.txt` | Commits to skip |
 | `commit-status/success_with_dockerfile.csv` | Commits with successful benchmarks |
 | `commit-status/other_commits.csv` | Parent commits for comparison |
@@ -113,6 +134,24 @@ docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> python3 -c "import s
 
 - `DOCKERHUB_USERNAME`: Docker Hub username
 - `DOCKERHUB_TOKEN`: Docker Hub access token
+
+## Manual Dockerfile Creation
+
+When creating custom Dockerfiles for problematic commits, follow `DOCKERFILE_FIX_GUIDELINES.md`. Key principles:
+- **Discover** package versions from PyPI history for the commit date
+- **Time-freeze** with constraints file + `--no-deps` installs
+- Commit SHA must appear exactly 3 times: `ENV`, `git checkout`, verification
+- Base image selection based on torch version (see guidelines)
+
+## Other Utility Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `detect_dockerfiles.py` | Scan JSONL to find which Dockerfiles exist at each commit |
+| `extract_dockerfiles.py` | Extract Dockerfile content from commits |
+| `fix_all_dockerfiles.py` | Batch-apply Dockerfile fixes |
+| `deep_scan_dockerfiles.py` | Deep analysis of Dockerfile variations |
+| `ultra_deep_scan.py` | Comprehensive commit scanning |
 
 ## Dependencies
 
