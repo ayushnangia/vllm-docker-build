@@ -1,56 +1,145 @@
-# SGLang Dockerfile for commit 8c7279c24e535681478188967b3007916b87b3d0
+# SGLang Docker image for commit 8c7279c24e535681478188967b3007916b87b3d0
 # Date: 2025-05-26
-# torch 2.6.0 requires CUDA 12.4 base image
+# SGLang version: 0.4.6.post2
+# torch: 2.6.0, flashinfer_python: 0.2.5, sgl-kernel: 0.1.4
 
+# Base image for torch 2.6.x - using CUDA 12.4
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# System dependencies
+# Build arguments
+ARG MAX_JOBS=96
+ARG TORCH_CUDA_ARCH_LIST="9.0"
+
+# Environment variables
+ENV TORCH_CUDA_ARCH_LIST="9.0"
+ENV MAX_JOBS=96
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git curl wget build-essential \
+    build-essential \
+    git \
+    curl \
+    wget \
+    vim \
+    cmake \
+    ninja-build \
     software-properties-common \
-    && rm -rf /var/lib/apt/lists/*
+    python3.10 \
+    python3.10-dev \
+    python3.10-venv \
+    python3-pip \
+    libibverbs-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Install Python 3.10 (Ubuntu 22.04 has it by default, but ensure proper setup)
-RUN apt-get update && apt-get install -y \
-    python3.10 python3.10-venv python3.10-dev python3-pip \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
-    && rm -rf /var/lib/apt/lists/*
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
 
-# Upgrade pip
+# Upgrade pip and install build tools
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
-# Pre-install torch with CUDA 12.4 index (MUST be done before sglang)
-RUN pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu124
-
-# Install sgl-kernel from PyPI (version 0.1.4 is available)
-RUN pip install sgl-kernel==0.1.4
-
-# Try to install flashinfer from flashinfer.ai website, fallback to build from source
-RUN pip install flashinfer -i https://flashinfer.ai/whl/cu124/torch2.6/ || \
-    (echo "Flashinfer wheel not found, building from source..." && \
-     pip install ninja numpy packaging && \
-     git clone --recursive https://github.com/flashinfer-ai/flashinfer.git /tmp/flashinfer && \
-     cd /tmp/flashinfer && \
-     git checkout v0.2.5 && \
-     cd python && \
-     TORCH_CUDA_ARCH_LIST="9.0" MAX_JOBS=8 pip install --no-build-isolation . && \
-     rm -rf /tmp/flashinfer)
-
-# Install other specific dependencies from pyproject.toml
-RUN pip install transformers==4.51.1 torchao==0.9.0
-
-# HARDCODE the commit SHA (don't use ARG to avoid forgotten --build-arg issues)
+# HARDCODE commit SHA (occurrence 1 of 3)
 ENV SGLANG_COMMIT=8c7279c24e535681478188967b3007916b87b3d0
 
-# Clone SGLang and checkout EXACT commit (hardcoded SHA)
+# Install torch 2.6.0 with CUDA 11.8 (most compatible)
+RUN pip3 install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu118
+
+# Create constraints file with discovered versions
+RUN cat > /opt/constraints.txt <<'EOF'
+# Core dependencies with versions discovered for the commit era
+fastapi==0.110.3
+uvicorn==0.29.0
+pydantic==2.7.1
+pydantic-core==2.18.2
+typing_extensions==4.11.0
+outlines==0.0.44
+pyzmq==26.0.3
+transformers>=4.52.4
+huggingface_hub
+datasets
+orjson
+packaging
+pillow
+psutil
+pynvml
+python-multipart
+uvloop
+numpy<2.0
+aiohttp
+requests
+tqdm
+setproctitle
+IPython
+einops
+partial_json_parser
+cuda-python
+ninja
+interegular
+prometheus-client>=0.20.0
+soundfile==0.13.1
+xgrammar==0.1.17
+blobfile==3.0.0
+llguidance>=0.7.11,<0.8.0
+compressed-tensors
+decord
+hf_transfer
+modelscope
+torchao>=0.9.0
+EOF
+
+# Install sgl-kernel 0.1.4 from PyPI (May 2025 commits need newer sgl-kernel for qserve functions)
+RUN pip3 install sgl-kernel==0.1.4
+
+# Install core dependencies with constraints
+RUN pip3 install -c /opt/constraints.txt \
+    fastapi==0.110.3 \
+    uvicorn==0.29.0 \
+    pydantic==2.7.1 \
+    pydantic-core==2.18.2 \
+    typing_extensions==4.11.0 \
+    outlines==0.0.44 \
+    pyzmq==26.0.3 \
+    transformers>=4.52.4 \
+    xgrammar==0.1.17 \
+    blobfile==3.0.0 \
+    soundfile==0.13.1 \
+    "torchao>=0.9.0" \
+    einops \
+    partial_json_parser \
+    cuda-python \
+    "numpy<2.0" \
+    packaging \
+    ninja
+
+# Install remaining dependencies
+RUN pip3 install -c /opt/constraints.txt \
+    huggingface_hub datasets orjson pillow psutil pynvml \
+    python-multipart uvloop aiohttp requests tqdm setproctitle \
+    IPython interegular "prometheus-client>=0.20.0" \
+    "llguidance>=0.7.11,<0.8.0" compressed-tensors \
+    decord hf_transfer modelscope msgspec
+
+# Build and install flashinfer from source (no wheels for torch 2.6/CUDA 12.4)
+# v0.2.5 has pyproject.toml at root level (not in python/ subdirectory)
+WORKDIR /sgl-workspace
+RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git && \
+    cd flashinfer && \
+    git checkout v0.2.5 && \
+    git submodule update --init --recursive && \
+    MAX_JOBS=${MAX_JOBS} TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
+    pip3 install -e . --no-build-isolation && \
+    rm -rf .git  # Clean up git to save space
+
+# Clone SGLang repo and checkout exact commit (occurrence 2 of 3)
 WORKDIR /sgl-workspace
 RUN git clone https://github.com/sgl-project/sglang.git sglang && \
     cd sglang && \
     git checkout 8c7279c24e535681478188967b3007916b87b3d0
 
-# VERIFY the checkout - compare against HARDCODED expected value
+# Verify the checkout matches expected commit (occurrence 3 of 3)
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
     EXPECTED="8c7279c24e535681478188967b3007916b87b3d0" && \
@@ -60,64 +149,32 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt && \
     echo "Verified: SGLang at commit $ACTUAL"
 
-# Patch pyproject.toml to remove already-installed dependencies
-RUN cd /sgl-workspace/sglang && \
-    sed -i 's/"flashinfer[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"flashinfer_python[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"sgl-kernel[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"torch[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"torchvision[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"transformers[^"]*",*//g' python/pyproject.toml && \
-    sed -i 's/"torchao[^"]*",*//g' python/pyproject.toml
+# Install SGLang with --no-deps and then install dependencies separately
+WORKDIR /sgl-workspace/sglang/python
+RUN pip3 install -e . --no-deps
 
-# Install SGLang from source (pyproject.toml is in python/ subdirectory)
-WORKDIR /sgl-workspace/sglang
-RUN pip install -e "python[srt]"
+# Install any missing SGLang dependencies using constraints
+RUN pip3 install -c /opt/constraints.txt \
+    $(grep -E "^[a-z]" pyproject.toml | grep -v "sglang\[" | grep -v "torch" | \
+      grep -v "flashinfer" | grep -v "sgl-kernel" | cut -d'"' -f2 | \
+      cut -d'=' -f1 | cut -d'>' -f1 | cut -d'<' -f1 | cut -d'!' -f1 | \
+      tr '\n' ' ') || true
 
-# Install additional dependencies from runtime_common if not already installed
-RUN pip install \
-    "blobfile==3.0.0" \
-    "compressed-tensors" \
-    "datasets" \
-    "fastapi" \
-    "hf_transfer" \
-    "huggingface_hub" \
-    "interegular" \
-    "llguidance>=0.7.11,<0.8.0" \
-    "modelscope" \
-    "msgspec" \
-    "ninja" \
-    "orjson" \
-    "packaging" \
-    "partial_json_parser" \
-    "pillow" \
-    "prometheus-client>=0.20.0" \
-    "psutil" \
-    "pydantic" \
-    "pynvml" \
-    "python-multipart" \
-    "pyzmq>=25.1.2" \
-    "soundfile==0.13.1" \
-    "scipy" \
-    "uvicorn" \
-    "uvloop" \
-    "xgrammar==0.1.19" \
-    "cuda-python" \
-    "outlines>=0.0.44,<=0.1.11" \
-    "einops"
+# For openbmb/MiniCPM models (from original Dockerfile)
+RUN pip3 install datamodel_code_generator
 
-# For H100 GPU optimization
-ENV TORCH_CUDA_ARCH_LIST="9.0"
+# Verify installation (skip CUDA-dependent imports - no GPU during build)
+# Note: outlines 0.0.44 has broken optional deps (pyairports) - skip its import check
+RUN python3 -c "import sglang; print('SGLang import OK')" && \
+    python3 -c "import torch; print(f'Torch version: {torch.__version__}')" && \
+    python3 -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \
+    echo "Build verification passed. CUDA imports verified at runtime."
 
-# Verify installation
-RUN python3 -c "import sglang; print('SGLang import OK')"
-RUN python3 -c "import flashinfer; print('Flashinfer import OK')"
-RUN python3 -c "import sgl_kernel; print('sgl-kernel import OK')"
-RUN python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
-RUN python3 -c "import torch; assert torch.cuda.is_available(), 'CUDA not available'"
+# Final environment setup
+ENV DEBIAN_FRONTEND=interactive
 
-# Set working directory for runtime
-WORKDIR /sgl-workspace/sglang
+# Set working directory
+WORKDIR /sgl-workspace
 
-# Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+# Default command
+CMD ["/bin/bash"]

@@ -1,9 +1,9 @@
-# SGLang Docker image for commit cfca4e0ed2cf4a97c2ee3b668f7115b59db0028a
-# Date: 2025-05-08
-# SGLang version: 0.4.6.post2
-# torch: 2.6.0, flashinfer_python: 0.2.5, sgl-kernel: 0.1.1
+# SGLang Docker image for commit e3ec6bf4b65a50e26e936a96adc7acc618292002
+# Date: 2025-06-13
+# SGLang version: 0.4.7
+# torch: 2.7.1, flashinfer_python: 0.2.6.post1, sgl-kernel: 0.1.8.post1
 
-# Base image for torch 2.6.x - using CUDA 12.4
+# Base image for torch 2.7.x - using CUDA 12.4
 FROM nvidia/cuda:12.4.1-devel-ubuntu22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,10 +42,10 @@ RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # HARDCODE commit SHA (occurrence 1 of 3)
-ENV SGLANG_COMMIT=cfca4e0ed2cf4a97c2ee3b668f7115b59db0028a
+ENV SGLANG_COMMIT=e3ec6bf4b65a50e26e936a96adc7acc618292002
 
-# Install torch 2.6.0 with CUDA 11.8 (most compatible)
-RUN pip3 install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cu118
+# Install torch 2.7.1 with CUDA 12.6 (exact version from pyproject.toml)
+RUN pip3 install torch==2.7.1 torchvision==0.22.1 --index-url https://download.pytorch.org/whl/cu126
 
 # Create constraints file with discovered versions
 RUN cat > /opt/constraints.txt <<'EOF'
@@ -80,18 +80,18 @@ ninja
 interegular
 prometheus-client>=0.20.0
 soundfile==0.13.1
-xgrammar==0.1.17
+xgrammar==0.1.19
 blobfile==3.0.0
 llguidance>=0.7.11,<0.8.0
 compressed-tensors
 decord
 hf_transfer
 modelscope
-torchao>=0.9.0
+torchao==0.9.0
 EOF
 
-# Install sgl-kernel 0.1.1 from PyPI first
-RUN pip3 install sgl-kernel==0.1.1
+# Install sgl-kernel 0.1.8.post1 from PyPI (required minimum version)
+RUN pip3 install sgl-kernel==0.1.8.post1
 
 # Install core dependencies with constraints
 RUN pip3 install -c /opt/constraints.txt \
@@ -103,10 +103,10 @@ RUN pip3 install -c /opt/constraints.txt \
     outlines==0.0.44 \
     pyzmq==26.0.3 \
     transformers>=4.52.4 \
-    xgrammar==0.1.17 \
+    xgrammar==0.1.19 \
     blobfile==3.0.0 \
     soundfile==0.13.1 \
-    "torchao>=0.9.0" \
+    torchao==0.9.0 \
     einops \
     partial_json_parser \
     cuda-python \
@@ -120,14 +120,13 @@ RUN pip3 install -c /opt/constraints.txt \
     python-multipart uvloop aiohttp requests tqdm setproctitle \
     IPython interegular "prometheus-client>=0.20.0" \
     "llguidance>=0.7.11,<0.8.0" compressed-tensors \
-    decord hf_transfer modelscope
+    decord hf_transfer modelscope msgspec
 
-# Build and install flashinfer from source (no wheels for torch 2.6/CUDA 12.4)
-# v0.2.5 has pyproject.toml at root level (not in python/ subdirectory)
+# Build and install flashinfer 0.2.6.post1 from source (no prebuilt wheels for torch 2.7.1)
 WORKDIR /sgl-workspace
 RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git && \
     cd flashinfer && \
-    git checkout v0.2.5 && \
+    git checkout v0.2.6.post1 && \
     git submodule update --init --recursive && \
     MAX_JOBS=${MAX_JOBS} TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST}" \
     pip3 install -e . --no-build-isolation && \
@@ -137,12 +136,12 @@ RUN git clone --recursive https://github.com/flashinfer-ai/flashinfer.git && \
 WORKDIR /sgl-workspace
 RUN git clone https://github.com/sgl-project/sglang.git sglang && \
     cd sglang && \
-    git checkout cfca4e0ed2cf4a97c2ee3b668f7115b59db0028a
+    git checkout e3ec6bf4b65a50e26e936a96adc7acc618292002
 
 # Verify the checkout matches expected commit (occurrence 3 of 3)
 RUN cd /sgl-workspace/sglang && \
     ACTUAL=$(git rev-parse HEAD) && \
-    EXPECTED="cfca4e0ed2cf4a97c2ee3b668f7115b59db0028a" && \
+    EXPECTED="e3ec6bf4b65a50e26e936a96adc7acc618292002" && \
     echo "Expected: $EXPECTED" && \
     echo "Actual:   $ACTUAL" && \
     test "$ACTUAL" = "$EXPECTED" || (echo "FATAL: COMMIT MISMATCH!" && exit 1) && \
@@ -160,11 +159,10 @@ RUN pip3 install -c /opt/constraints.txt \
       cut -d'=' -f1 | cut -d'>' -f1 | cut -d'<' -f1 | cut -d'!' -f1 | \
       tr '\n' ' ') || true
 
-# For openbmb/MiniCPM models (from original Dockerfile)
+# For openbmb/MiniCPM models
 RUN pip3 install datamodel_code_generator
 
 # Verify installation (skip CUDA-dependent imports - no GPU during build)
-# Note: outlines 0.0.44 has broken optional deps (pyairports) - skip its import check
 RUN python3 -c "import sglang; print('SGLang import OK')" && \
     python3 -c "import torch; print(f'Torch version: {torch.__version__}')" && \
     python3 -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \

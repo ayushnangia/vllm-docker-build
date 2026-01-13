@@ -1,0 +1,7 @@
+ValueError: No processor registered for architecture: ['InternVLChatModel']
+
+This SGLang version does not support InternVL models. The benchmark is using OpenGVLab/InternVL2_5-8B, but this version only supports architectures like Qwen2VL, Llava variants, MiniCPMV/O, Gemma3, etc.
+
+Affected commits:
+- 3212c2ad3f7e4fb473dc807b4b176020a778ed5b (3212c2ad.Dockerfile)
+- 534756749ae4e664f762de2645a4f63ca2901bab (53475674.Dockerfile)

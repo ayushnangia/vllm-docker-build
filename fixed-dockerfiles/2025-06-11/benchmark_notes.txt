@@ -1,0 +1,4 @@
+No build errors encountered for these Dockerfiles.
+However, the benchmark keeps running indefinitely on Modal for both:
+- 021f76e4f49861b2e9ea9ccff06a46d577e3c548 (021f76e4.Dockerfile)
+- 777688b8929c877e4e28c2eac208d776abe4c3af (777688b8.Dockerfile)

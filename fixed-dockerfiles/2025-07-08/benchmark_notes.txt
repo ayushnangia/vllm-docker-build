@@ -1,0 +1,3 @@
+Image built successfully and is working, but there are benchmark issues when running as a VL (Vision-Language) model for both:
+- 136c6e0431c2067c3a2a98ad2c77fc89a9cb98e7 (136c6e04.Dockerfile)
+- a37e1247c183cff86a18f2ed1a075e40704b1c5e (a37e1247.Dockerfile)
