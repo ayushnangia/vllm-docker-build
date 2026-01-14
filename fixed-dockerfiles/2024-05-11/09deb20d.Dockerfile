@@ -94,4 +94,4 @@ RUN python -c "import torch; print('torch', torch.__version__)" && \
     python -c "import sglang; print('sglang import OK')"
 
 WORKDIR /sgl-workspace/sglang
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

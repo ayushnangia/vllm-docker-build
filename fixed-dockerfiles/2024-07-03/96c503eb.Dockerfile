@@ -135,7 +135,7 @@ RUN pip install -c /opt/constraints.txt \
     torch \
     uvicorn \
     uvloop \
-    zmq \
+    pyzmq \
     "outlines>=0.0.44"
 
 # Install SGLang other extras
@@ -163,4 +163,4 @@ WORKDIR /sgl-workspace/sglang
 EXPOSE 30000
 
 # Set entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

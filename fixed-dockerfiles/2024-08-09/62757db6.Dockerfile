@@ -198,4 +198,4 @@ WORKDIR /sgl-workspace/sglang
 # Add label for commit tracking (SHA in ENV for verification)
 
 # Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

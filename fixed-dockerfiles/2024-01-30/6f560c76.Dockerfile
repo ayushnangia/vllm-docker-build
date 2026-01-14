@@ -137,4 +137,4 @@ RUN python3 -c "import pydantic; assert pydantic.__version__.startswith('1.'), f
 WORKDIR /sgl-workspace/sglang
 
 # Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

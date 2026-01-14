@@ -118,7 +118,7 @@ RUN pip install -c /opt/constraints.txt \
     python-multipart \
     torchao \
     uvloop \
-    zmq
+    pyzmq
 
 # Install flashinfer (for torch 2.4 + CUDA 12.1)
 RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/ || \

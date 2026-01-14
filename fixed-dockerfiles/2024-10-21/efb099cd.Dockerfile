@@ -237,4 +237,4 @@ RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
 ENV DEBIAN_FRONTEND=interactive
 
 # Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

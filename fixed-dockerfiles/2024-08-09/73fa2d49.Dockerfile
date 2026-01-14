@@ -142,7 +142,7 @@ RUN pip3 install --no-cache-dir -c /opt/constraints.txt \
     "packaging" \
     "python-multipart" \
     "uvloop" \
-    "zmq"
+    "pyzmq"
 
 # Install sgl-kernel from PyPI (available for this version)
 RUN pip3 install --no-cache-dir sgl-kernel
@@ -168,4 +168,4 @@ ENV DEBIAN_FRONTEND=interactive
 WORKDIR /sgl-workspace/sglang
 
 # Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

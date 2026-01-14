@@ -137,7 +137,7 @@ RUN pip install -c /opt/constraints.txt \
     torch \
     uvicorn \
     uvloop \
-    zmq \
+    pyzmq \
     openai \
     tiktoken
 

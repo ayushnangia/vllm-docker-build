@@ -141,4 +141,4 @@ ENV DEBIAN_FRONTEND=interactive
 WORKDIR /sgl-workspace/sglang
 
 # Default entrypoint
-ENTRYPOINT ["python3", "-m", "sglang.launch_server"]
+ENTRYPOINT ["/bin/bash"]

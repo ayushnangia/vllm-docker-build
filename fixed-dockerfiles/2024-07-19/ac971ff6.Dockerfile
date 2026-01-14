@@ -121,7 +121,7 @@ RUN pip install --no-cache-dir \
     hf_transfer \
     huggingface_hub \
     uvloop \
-    zmq
+    pyzmq
 
 # Install SGLang optional dependencies
 RUN pip install --no-cache-dir \

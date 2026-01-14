@@ -150,7 +150,7 @@ RUN pip3 install -c /opt/constraints.txt \
     "torchao" \
     "uvicorn" \
     "uvloop" \
-    "zmq" \
+    "pyzmq" \
     "outlines>=0.0.44" \
     "modelscope"
 
