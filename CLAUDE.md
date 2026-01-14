@@ -55,8 +55,8 @@ python3 detect_dockerfiles.py
 ```
 Scans commits in JSONL to find what Dockerfiles exist at each commit.
 
-### GitHub Actions
-Trigger: Actions → "Build vLLM Docker (NVIDIA)" → Run workflow with `batch_size` and `max_parallel`.
+### GitHub Actions (if configured)
+If workflows are set up: Actions → "Build vLLM Docker (NVIDIA)" → Run workflow with `batch_size` and `max_parallel`. Requires `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` secrets.
 
 ## Architecture
 
@@ -99,6 +99,8 @@ The build script maintains commit sets requiring special handling:
 | `commit-status/success_with_dockerfile.csv` | Commits with successful benchmarks |
 | `commit-status/other_commits.csv` | Parent commits for comparison |
 | `commit-status/failed/*.txt` | Categorized failure lists by error type |
+| `custom-dockerfiles/{date}/{sha}.Dockerfile` | Manual Dockerfiles organized by PR date |
+| `fixed-dockerfiles/` | Auto-fixed Dockerfiles (same structure) |
 
 ### Commit Verification System
 
@@ -130,10 +132,21 @@ docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> pip show sglang | gr
 docker run --rm ayushnangia16/nvidia-sglang-docker:<commit> python3 -c "import sglang; print('OK')"
 ```
 
-## Required Secrets (GitHub Actions)
+## Common Build Failures
 
-- `DOCKERHUB_USERNAME`: Docker Hub username
-- `DOCKERHUB_TOKEN`: Docker Hub access token
+### FlashInfer "No module named" at Runtime
+**Cause:** Using `pip install -e .` (editable install) then deleting the source.
+**Fix:** Use `pip install .` (non-editable) so the module is copied to site-packages:
+```dockerfile
+# WRONG - editable install breaks when source deleted
+RUN pip install -e . && rm -rf /tmp/flashinfer
+
+# CORRECT - non-editable, safe to delete source
+RUN pip install . && rm -rf /tmp/flashinfer
+```
+
+### Dependency Version Conflicts
+Old commits fail because pip installs latest (incompatible) versions of unbounded deps. See `DOCKERFILE_FIX_GUIDELINES.md` for the time-freeze pattern: discover versions from PyPI history for the commit date, then pin with constraints file.
 
 ## Manual Dockerfile Creation
 
@@ -158,3 +171,10 @@ When creating custom Dockerfiles for problematic commits, follow `DOCKERFILE_FIX
 - Docker with Buildx enabled
 - git
 - Python 3 (optional: `tqdm` for progress bars)
+
+## Testing
+
+No automated test suite. Verify builds manually:
+1. Build with `--no-push --show-build-logs`
+2. Run `verify_sglang_docker.py <commit>` to check commit identity
+3. Test `python3 -c "import sglang"` inside the container

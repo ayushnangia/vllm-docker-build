@@ -51,8 +51,8 @@ RUN pip3 install torch==2.6.0 torchvision==0.21.0 --index-url https://download.p
 # Versions verified from PyPI release history
 RUN cat > /opt/constraints.txt <<'EOF'
 # Core dependencies pinned in pyproject.toml (SGLang 0.4.6.post2)
-# Using transformers>=4.52.4 for compressed-tensors compatibility
-transformers>=4.52.4
+# transformers 4.53.0+ required for compressed_tensors (masking_utils module)
+transformers>=4.53.0
 xgrammar==0.1.17
 soundfile==0.13.1
 blobfile==3.0.0
@@ -88,7 +88,7 @@ ninja
 interegular
 prometheus-client>=0.20.0
 llguidance>=0.7.11,<0.8.0
-compressed-tensors
+compressed-tensors>=0.12.1
 hf_transfer
 modelscope
 decord
@@ -100,7 +100,7 @@ RUN pip3 install sgl-kernel==0.1.1
 
 # Install core dependencies with constraints (pinned versions from pyproject.toml)
 RUN pip3 install -c /opt/constraints.txt \
-    "transformers>=4.52.4" \
+    "transformers>=4.53.0" \
     xgrammar==0.1.17 \
     soundfile==0.13.1 \
     blobfile==3.0.0 \

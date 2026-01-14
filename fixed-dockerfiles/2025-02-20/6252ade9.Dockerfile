@@ -23,17 +23,18 @@ RUN apt-get update && apt-get install -y \
 
 # Create constraints file with discovered versions from PyPI
 RUN cat > /opt/constraints.txt <<'EOF'
-# Versions discovered from PyPI for 2025-02-20 era
-# vLLM 0.7.2 requires pydantic>=2.9, outlines==0.1.11
-# outlines 0.1.11 requires pydantic>=2.0
-pydantic==2.10.6
-pydantic-core==2.25.5
-typing_extensions==4.12.2
-fastapi==0.115.0
-uvicorn==0.31.1
+# Versions for vLLM 0.7.2 / Feb 2025 era
+# Use old compressed-tensors to avoid transformers 4.53+ requirement
+pydantic>=2.9
+typing_extensions>=4.12.0
+fastapi>=0.115.0
+uvicorn>=0.31.0
 outlines==0.1.11
-pyzmq==26.0.0
+pyzmq>=26.0.0
 numpy<2.0.0
+transformers==4.48.3
+compressed-tensors==0.9.1
+torchao>=0.7.0,<0.12.0
 EOF
 
 # Install vLLM 0.7.2 without dependencies to control versions
@@ -48,7 +49,7 @@ RUN pip install -c /opt/constraints.txt \
     tqdm \
     blake3 \
     py-cpuinfo \
-    'transformers>=4.48.2' \
+    'transformers==4.48.3' \
     'tokenizers>=0.19.1' \
     protobuf \
     'fastapi!=0.113.*,!=0.114.0,>=0.107.0' \
@@ -82,6 +83,7 @@ RUN pip install flashinfer-python>=0.2.1.post2 \
 RUN pip install sgl-kernel==0.1.0
 
 # Clone SGLang repository at the exact commit
+WORKDIR /sgl-workspace
 RUN git clone https://github.com/sgl-project/sglang.git && \
     cd sglang && \
     git checkout 6252ade98571c3374d7e7df3430a2bfbddfc5eb3
@@ -114,12 +116,13 @@ RUN pip install -c /opt/constraints.txt \
     pydantic \
     python-multipart \
     'pyzmq>=25.1.2' \
-    'torchao>=0.7.0' \
+    'torchao>=0.7.0,<0.12.0' \
     uvicorn \
     uvloop \
     'xgrammar==0.1.10' \
     ninja \
-    'transformers==4.48.3'
+    'transformers==4.48.3' \
+    'compressed-tensors==0.9.1'
 
 # Install SGLang base dependencies
 RUN pip install -c /opt/constraints.txt \
@@ -130,7 +133,7 @@ RUN pip install -c /opt/constraints.txt \
     setproctitle
 
 # Install additional dependencies for MiniCPM models
-RUN pip install datamodel_code_generator
+RUN pip install datamodel_code_generator dill
 
 # Verify installation
 RUN python3 -c "import sglang; print('SGLang imported successfully')" && \
