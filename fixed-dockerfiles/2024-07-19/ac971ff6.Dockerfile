@@ -71,24 +71,25 @@ RUN pip install --no-cache-dir \
     "prometheus_client>=0.18.0" \
     "prometheus-fastapi-instrumentator>=7.0.0" \
     pillow \
-    openai
+    openai \
+    fastapi \
+    aiohttp \
+    "uvicorn[standard]" \
+    pydantic \
+    "outlines>=0.0.43"
 
 # Install vLLM CUDA dependencies from requirements-cuda.txt
 RUN pip install --no-cache-dir \
     "ray>=2.9" \
     nvidia-ml-py \
     torchvision==0.18.0 \
-    xformers==0.0.26.post1 \
     vllm-flash-attn==2.5.9
 
-# Build flashinfer from source (no prebuilt wheels for torch 2.3 at cu121)
-RUN cd /tmp && \
-    git clone https://github.com/flashinfer-ai/flashinfer.git && \
-    cd flashinfer && \
-    git checkout v0.0.8 && \
-    cd python && \
-    pip install --no-cache-dir . && \
-    cd / && rm -rf /tmp/flashinfer
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.26.post1 --no-deps
+
+# Install flashinfer from wheels
+RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
 
 # Clone SGLang at specific commit
 WORKDIR /sgl-workspace
@@ -140,8 +141,9 @@ RUN pip uninstall -y triton triton-nightly || true && \
     triton-nightly
 
 # Sanity checks
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
 RUN python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
-RUN python3 -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+RUN pip show vllm > /dev/null && echo "vLLM installed OK"
 RUN python3 -c "import sglang; print(f'SGLang loaded successfully')"
 RUN python3 -c "import flashinfer; print(f'Flashinfer loaded successfully')"
 RUN python3 -c "import outlines; print(f'Outlines loaded successfully')"

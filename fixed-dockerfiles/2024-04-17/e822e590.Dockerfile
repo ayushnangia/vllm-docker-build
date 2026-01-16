@@ -64,6 +64,9 @@ RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 # Install vLLM 0.4.0.post1 with --no-deps first
 RUN pip install vllm==0.4.0.post1 --no-deps
 
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.23.post1 --no-deps
+
 # Install vLLM dependencies using constraints where applicable
 RUN pip install -c /opt/constraints.txt \
     cmake>=3.21 \
@@ -74,8 +77,7 @@ RUN pip install -c /opt/constraints.txt \
     numpy \
     requests \
     py-cpuinfo \
-    "transformers>=4.39.1" \
-    xformers==0.0.23.post1 \
+    transformers==4.39.3 \
     fastapi \
     "uvicorn[standard]" \
     "pydantic>=2.0" \
@@ -100,12 +102,13 @@ RUN cd /sgl-workspace/sglang && \
     echo "$ACTUAL" > /opt/sglang_commit.txt
 
 # Build and install flashinfer from source (required for this era)
+# Use --no-build-isolation so it can use the already-installed torch
 RUN cd /sgl-workspace && \
     git clone https://github.com/flashinfer-ai/flashinfer.git && \
     cd flashinfer && \
     git checkout v0.0.2 && \
     cd python && \
-    pip install . --no-deps && \
+    pip install . --no-build-isolation && \
     cd /sgl-workspace && \
     rm -rf flashinfer
 
@@ -114,6 +117,7 @@ RUN cd /sgl-workspace/sglang/python && \
     pip install -e . --no-deps
 
 # Install SGLang dependencies from pyproject.toml using constraints
+# NOTE: Do NOT reinstall torch or vllm - they are already installed
 RUN pip install -c /opt/constraints.txt \
     requests \
     tqdm \
@@ -121,11 +125,9 @@ RUN pip install -c /opt/constraints.txt \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \
-    "vllm>=0.3.3" \
     interegular \
     pydantic \
     pillow \
@@ -138,6 +140,10 @@ RUN pip install -c /opt/constraints.txt \
 
 # Update to use correct outlines version from constraints (0.0.39 for this era)
 RUN pip install --force-reinstall -c /opt/constraints.txt outlines==0.0.39
+
+# Re-pin transformers to avoid pytree compatibility issue with torch 2.1.2
+# Also pin numpy<2.0 for outlines compatibility
+RUN pip install transformers==4.39.3 "numpy<2.0"
 
 # Final verification
 RUN python -c "import sglang; print('SGLang imported successfully')" && \

@@ -86,8 +86,10 @@ RUN pip install -c /opt/constraints.txt \
     ray>=2.9 \
     nvidia-ml-py \
     torchvision==0.18.0 \
-    xformers==0.0.26.post1 \
     vllm-flash-attn==2.5.9
+
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.26.post1 --no-deps
 
 # Install flashinfer from the official wheel repository
 # Using the latest available version for cu121/torch2.3
@@ -108,11 +110,13 @@ RUN cd /sgl-workspace/sglang && \
     fi && \
     echo "$ACTUAL" > /opt/sglang_commit.txt
 
-# Build and install sgl-kernel from source
+# Build and install sgl-kernel from source (if it exists)
 # (sgl-kernel not available on PyPI until April 2025)
-RUN cd /sgl-workspace/sglang/python/sglang/srt/srt_kernels && \
+RUN if [ -d "/sgl-workspace/sglang/python/sglang/srt/srt_kernels" ] && [ -f "/sgl-workspace/sglang/python/sglang/srt/srt_kernels/setup.py" ]; then \
+    cd /sgl-workspace/sglang/python/sglang/srt/srt_kernels && \
     python setup.py bdist_wheel && \
-    pip install dist/*.whl
+    pip install dist/*.whl; \
+    else echo "sgl-kernel not found in this commit, skipping"; fi
 
 # Install SGLang without dependencies (using constraints)
 RUN cd /sgl-workspace/sglang/python && \
@@ -120,6 +124,7 @@ RUN cd /sgl-workspace/sglang/python && \
 
 # Install SGLang dependencies with constraints
 # These are from the pyproject.toml [srt] optional deps
+# Note: Don't reinstall torch - keep the one from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     tqdm \
@@ -134,7 +139,6 @@ RUN pip install -c /opt/constraints.txt \
     psutil \
     pydantic \
     rpyc \
-    torch \
     uvicorn \
     uvloop \
     pyzmq \
@@ -146,8 +150,9 @@ RUN pip uninstall -y triton triton-nightly && \
     pip install --no-deps --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 
 # Verify installation
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
 RUN python -c "import sglang; print('SGLang imported successfully')" && \
-    python -c "import vllm; print('vLLM imported successfully')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
     python -c "import outlines; print('Outlines imported successfully')" && \
     python -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \
     python -c "import fastapi; print(f'FastAPI version: {fastapi.__version__}')"

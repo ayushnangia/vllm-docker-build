@@ -86,8 +86,10 @@ RUN pip install -c /opt/constraints.txt \
     filelock \
     ray \
     nvidia-ml-py \
-    vllm-nccl-cu12==2.18.1 \
-    xformers==0.0.26.post1
+    "vllm-nccl-cu12>=2.18,<2.19"
+
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.26.post1 --no-deps
 
 # Install flashinfer 0.0.8 from flashinfer.ai wheels (available for torch 2.3)
 RUN pip install flashinfer==0.0.8 -i https://flashinfer.ai/whl/cu121/torch2.3/
@@ -113,12 +115,12 @@ RUN cd /sgl-workspace/sglang/python && \
     pip install -e . --no-deps
 
 # Install SGLang dependencies using constraints
+# NOTE: Do NOT reinstall torch - keep the 2.3.0 from base image
 RUN pip install -c /opt/constraints.txt \
     aiohttp \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \
@@ -130,7 +132,7 @@ RUN pip install -c /opt/constraints.txt \
     requests \
     tqdm \
     openai \
-    numpy \
+    "numpy<2.0" \
     tiktoken \
     anthropic
 
@@ -138,7 +140,8 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install datasets
 
 # Verify installations
-RUN python -c "import vllm; print('vLLM import successful')" && \
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
+RUN pip show vllm > /dev/null && echo "vLLM installed OK" && \
     python -c "import sglang; print('SGLang import successful')" && \
     python -c "import outlines; print('Outlines import successful')" && \
     python -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \

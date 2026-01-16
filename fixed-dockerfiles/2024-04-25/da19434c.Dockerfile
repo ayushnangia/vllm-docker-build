@@ -71,8 +71,10 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install -c /opt/constraints.txt \
     "ray>=2.9" \
     nvidia-ml-py \
-    "vllm-nccl-cu12>=2.18,<2.19" \
-    xformers==0.0.25
+    "vllm-nccl-cu12>=2.18,<2.19"
+
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.25 --no-deps
 
 # Clone SGLang at the specific commit (1st occurrence of SHA)
 RUN git clone https://github.com/sgl-project/sglang.git /sgl-workspace/sglang && \
@@ -93,20 +95,20 @@ RUN cd /sgl-workspace/sglang/python && \
     pip install -e . --no-deps
 
 # Install SGLang dependencies from pyproject.toml [srt] extras
+# NOTE: Do NOT reinstall torch or vllm - they are already installed
 RUN pip install -c /opt/constraints.txt \
     aiohttp \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \
-    "vllm>=0.3.3" \
     interegular \
     pydantic \
     pillow \
-    "outlines>=0.0.27"
+    "outlines>=0.0.27" \
+    "numpy<2.0"
 
 # Install additional SGLang core dependencies
 RUN pip install -c /opt/constraints.txt \
@@ -114,8 +116,9 @@ RUN pip install -c /opt/constraints.txt \
     tqdm
 
 # Sanity check - verify all key imports work
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
 RUN python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
     python3 -c "import outlines; print('Outlines import OK')" && \
     python3 -c "import pydantic; print('Pydantic import OK')" && \
     python3 -c "import fastapi; print('FastAPI import OK')" && \

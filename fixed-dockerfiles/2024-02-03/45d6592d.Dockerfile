@@ -52,21 +52,22 @@ EOF
 # Pre-install torch (already in base image, but ensure correct version)
 RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 
-# Install xformers compatible with torch 2.1.2 (vLLM 0.2.7 requires xformers==0.0.23.post1)
-RUN pip install xformers==0.0.23.post1 --index-url https://download.pytorch.org/whl/cu121
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.23.post1 --no-deps
 
 # Install vLLM 0.2.7 WITHOUT dependencies to avoid conflicts
 RUN pip install vllm==0.2.7 --no-deps
 
 # Install vLLM dependencies from vLLM 0.2.7 requirements.txt (discovered from exploration)
 # vLLM 0.2.7 explicitly requires pydantic==1.10.13 (v1)
+# Pin transformers to 4.37.2 to avoid pytree compatibility issue with torch 2.1.2
 RUN pip install -c /opt/constraints.txt \
     ninja \
     psutil \
     "ray>=2.5.1" \
     sentencepiece \
     numpy \
-    "transformers>=4.36.0" \
+    "transformers==4.37.2" \
     fastapi \
     "uvicorn[standard]" \
     "pydantic==1.10.13" \
@@ -101,13 +102,13 @@ WORKDIR /sgl-workspace/sglang
 RUN pip install -e python --no-deps
 
 # Install SGLang dependencies from pyproject.toml with constraints
+# NOTE: Do NOT reinstall torch - keep the 2.1.2 from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     aiohttp \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \

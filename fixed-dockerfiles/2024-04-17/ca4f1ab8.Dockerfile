@@ -39,6 +39,7 @@ aiohttp==3.9.5
 
 # From vLLM 0.3.3 requirements
 torch==2.1.2
+# Pin transformers to 4.38.2 to avoid pytree compatibility issue with torch 2.1.2
 transformers==4.38.2
 xformers==0.0.23.post1
 ray==2.9.3
@@ -65,6 +66,9 @@ RUN pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 # Install vLLM 0.3.3 without dependencies
 RUN pip install vllm==0.3.3 --no-deps
 
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.23.post1 --no-deps
+
 # Install vLLM dependencies using constraints
 RUN pip install -c /opt/constraints.txt \
     ninja \
@@ -73,16 +77,15 @@ RUN pip install -c /opt/constraints.txt \
     sentencepiece \
     numpy \
     transformers \
-    xformers \
     fastapi \
     uvicorn \
     pydantic \
     pydantic-core \
     prometheus_client \
-    pynvml \
+    pynvml==11.5.0 \
     triton \
     outlines \
-    cupy-cuda12x \
+    cupy-cuda12x==12.1.0 \
     typing_extensions
 
 # Clone SGLang at the exact commit (2nd occurrence - HARDCODED)
@@ -129,8 +132,10 @@ RUN pip install -c /opt/constraints.txt \
     anthropic \
     tiktoken
 
-# Install datasets for benchmarking
-RUN pip install datasets
+# Install datasets for benchmarking with constraints
+# Also re-pin transformers to avoid pytree issue with torch 2.1.2
+RUN pip install -c /opt/constraints.txt datasets && \
+    pip install transformers==4.38.2
 
 # Verification step - ensure everything imports correctly
 RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \

@@ -63,22 +63,24 @@ EOF
 # Install vLLM 0.2.5 with --no-deps to avoid dependency conflicts
 RUN pip install vllm==0.2.5 --no-deps
 
+# Install xformers FIRST with --no-deps to prevent it from pulling wrong torch version
+RUN pip install xformers==0.0.23 --no-deps
+
 # Install vLLM dependencies from requirements.txt (discovered via repo exploration)
+# NOTE: xformers already installed, torch comes from base image
 RUN pip install -c /opt/constraints.txt \
     ninja \
     psutil \
-    ray==2.9.0 \
+    "ray>=2.5.1,<2.10" \
     pandas \
     pyarrow \
     sentencepiece \
-    numpy \
-    torch==2.1.1 \
-    transformers==4.36.2 \
-    xformers==0.0.23 \
+    "numpy<2.0" \
+    "transformers==4.36.2" \
     fastapi==0.109.0 \
-    uvicorn[standard]==0.27.0.post1 \
-    pydantic==1.10.13 \
-    aioprometheus[starlette]
+    "uvicorn[standard]==0.27.0.post1" \
+    "pydantic==1.10.13" \
+    "aioprometheus[starlette]"
 
 # Install flashinfer from wheels (available for torch 2.1)
 RUN pip install flashinfer --index-url https://flashinfer.ai/whl/cu121/torch2.1/
@@ -105,24 +107,20 @@ RUN cd /sgl-workspace/sglang && \
 RUN pip install -e /sgl-workspace/sglang/python --no-deps
 
 # Install SGLang dependencies (from pyproject.toml discovered via repo exploration)
+# NOTE: Do NOT reinstall torch - keep the 2.1.1 from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     aiohttp \
-    fastapi \
     psutil \
     rpyc \
-    torch==2.1.1 \
     uvloop \
-    uvicorn \
-    pyzmq==25.1.2 \
+    "pyzmq==25.1.2" \
     interegular \
     lark \
     numba \
-    pydantic==1.10.13 \
     diskcache \
     cloudpickle \
     pillow \
-    numpy \
     openai
 
 # Verify installations

@@ -55,20 +55,23 @@ EOF
 # Install vllm 0.2.5 with --no-deps to avoid dependency conflicts
 RUN pip install vllm==0.2.5 --no-deps
 
-# Install vllm's actual dependencies with constraints
+# Install xformers FIRST with --no-deps to prevent it from pulling torch 2.9.x
+# xformers 0.0.23.post1 is compatible with torch 2.1.2
+RUN pip install xformers==0.0.23.post1 --no-deps
+
+# Install vllm's actual dependencies with constraints (excluding xformers which is already installed)
 RUN pip install -c /opt/constraints.txt \
     ninja \
     psutil \
-    "ray>=2.5.1" \
+    "ray>=2.5.1,<2.10" \
     pandas \
     pyarrow \
     sentencepiece \
-    numpy \
-    transformers \
-    xformers \
-    fastapi \
-    "uvicorn[standard]" \
-    pydantic \
+    "numpy<2.0" \
+    "transformers==4.37.2" \
+    fastapi==0.109.1 \
+    "uvicorn[standard]==0.27.0.post1" \
+    "pydantic==1.10.13" \
     "aioprometheus[starlette]"
 
 # Set workspace
@@ -97,20 +100,17 @@ WORKDIR /sgl-workspace/sglang
 RUN pip install -e python --no-deps
 
 # Install sglang's dependencies from pyproject.toml[srt] with constraints
+# NOTE: Do NOT reinstall torch here - keep the 2.1.2 from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     aiohttp \
-    fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
-    uvicorn \
-    pyzmq \
+    "pyzmq==25.1.2" \
     interegular \
     lark \
     numba \
-    pydantic \
     diskcache \
     cloudpickle \
     pillow

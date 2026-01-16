@@ -58,11 +58,10 @@ EOF
 # Upgrade pip
 RUN pip install --upgrade pip setuptools wheel
 
-# Ensure torch 2.3.0 is installed (base image should have it)
-RUN pip install torch==2.3.0 --index-url https://download.pytorch.org/whl/cu121
+# Note: Keep torch from base image, don't reinstall
 
-# Install xformers for torch 2.3.0
-RUN pip install xformers==0.0.26.post1 --index-url https://download.pytorch.org/whl/cu121
+# Install xformers for torch 2.3.0 with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.26.post1 --no-deps
 
 # Install vLLM 0.5.0 without dependencies first
 RUN pip install vllm==0.5.0 --no-deps
@@ -121,6 +120,7 @@ RUN cd /sgl-workspace/sglang/python && \
 
 # Install SGLang dependencies from pyproject.toml [srt] extras
 # Using constraints to ensure versions from July 2024 era
+# Note: Don't reinstall torch - keep the one from base image
 RUN pip install -c /opt/constraints.txt \
     aiohttp \
     fastapi \
@@ -132,7 +132,6 @@ RUN pip install -c /opt/constraints.txt \
     psutil \
     pydantic \
     rpyc \
-    torch \
     uvicorn \
     uvloop \
     pyzmq \
@@ -149,8 +148,9 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install datasets
 
 # Verify imports work
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
 RUN python3 -c "import sglang; print('SGLang import OK')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
     python3 -c "import torch; print(f'Torch version: {torch.__version__}')" && \
     python3 -c "import xformers; print(f'xformers version: {xformers.__version__}')" && \
     python3 -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \

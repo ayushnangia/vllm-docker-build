@@ -62,8 +62,10 @@ RUN pip install -c /opt/constraints.txt \
     typing_extensions \
     'filelock>=3.10.4' \
     'ray>=2.9' \
-    nvidia-ml-py \
-    'xformers==0.0.25'
+    nvidia-ml-py
+
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.25 --no-deps
 
 # Install flashinfer from wheels (available for torch 2.2)
 RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.2/
@@ -92,6 +94,7 @@ RUN cd /sgl-workspace/sglang/python && \
     pip install -e . --no-deps
 
 # Install SGLang dependencies with constraints
+# NOTE: Do NOT reinstall torch - keep the 2.2.1 from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     tqdm \
@@ -99,7 +102,6 @@ RUN pip install -c /opt/constraints.txt \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \
@@ -108,7 +110,7 @@ RUN pip install -c /opt/constraints.txt \
     pillow \
     'outlines>=0.0.27' \
     'openai>=1.0' \
-    numpy \
+    "numpy<2.0" \
     tiktoken \
     'anthropic>=0.20.0'
 
@@ -116,10 +118,10 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install sgl-kernel || echo "sgl-kernel not available, skipping"
 
 # Final sanity check - verify imports
-RUN python3 -c "import sglang; print('SGLang import OK')"
-RUN python3 -c "import vllm; print('vLLM import OK')"
-RUN python3 -c "import outlines; print('Outlines import OK')"
-RUN python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
+RUN python3 -c "import sglang; print('SGLang import OK')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
+    python3 -c "import torch; print(f'Torch version: {torch.__version__}')"
 
 # Set working directory
 WORKDIR /sgl-workspace

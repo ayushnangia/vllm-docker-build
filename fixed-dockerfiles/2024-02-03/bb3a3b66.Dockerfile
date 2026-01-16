@@ -40,7 +40,6 @@ numba==0.59.0
 interegular==0.3.3
 lark==1.1.9
 rpyc==5.3.1
-flashinfer==0.0.1
 EOF
 
 # Install PyTorch (base image should have it but ensure correct version)
@@ -63,11 +62,11 @@ RUN pip install -c /opt/constraints.txt \
     "aioprometheus[starlette]" \
     "pynvml==11.5.0"
 
-# Install xformers compatible with torch 2.1.2
-RUN pip install xformers==0.0.23.post1 --index-url https://download.pytorch.org/whl/cu121
+# Install xformers FIRST with --no-deps to prevent pulling wrong torch
+RUN pip install xformers==0.0.23.post1 --no-deps
 
-# Install flashinfer from PyPI (0.0.1 was available on Jan 31, 2024)
-RUN pip install -c /opt/constraints.txt flashinfer==0.0.1
+# Install flashinfer from wheel index (not available on standard PyPI)
+RUN pip install flashinfer --index-url https://flashinfer.ai/whl/cu121/torch2.1/
 
 # Clone SGLang repository at specific commit
 WORKDIR /sgl-workspace
@@ -90,15 +89,15 @@ RUN cd /sgl-workspace/sglang && \
 RUN cd /sgl-workspace/sglang && \
     pip install -e ./python --no-deps
 
-# Install SGLang dependencies from pyproject.toml discovered from repo
+# Install SGLang dependencies from pyproject.toml
 # Note: sgl-kernel didn't exist yet (first released April 2025)
+# NOTE: Do NOT reinstall torch - keep the 2.1.2 from base image
 RUN pip install -c /opt/constraints.txt \
     requests \
     aiohttp \
     fastapi \
     psutil \
     rpyc \
-    torch \
     uvloop \
     uvicorn \
     pyzmq \

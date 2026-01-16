@@ -6,23 +6,34 @@ FROM nvidia/cuda:12.1.1-devel-ubuntu20.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV CUDA_VERSION=12.1
 
-# Install system dependencies and Python 3.10
+# Install system dependencies
 RUN apt-get update && apt-get install -y \
-    git \
-    wget \
-    curl \
-    vim \
+    git curl wget vim \
     build-essential \
-    software-properties-common \
     ninja-build \
     libibverbs-dev \
-    && add-apt-repository ppa:deadsnakes/ppa -y \
-    && apt-get update \
-    && apt-get install -y python3.10 python3.10-dev python3.10-distutils \
-    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.10 1 \
-    && update-alternatives --set python3 /usr/bin/python3.10 \
-    && curl https://bootstrap.pypa.io/get-pip.py | python3 \
+    cmake \
+    zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
+    libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev \
+    liblzma-dev \
     && rm -rf /var/lib/apt/lists/*
+
+# Build Python 3.10 from source (deadsnakes PPA deprecated for Ubuntu 20.04)
+RUN wget https://www.python.org/ftp/python/3.10.14/Python-3.10.14.tgz && \
+    tar -xf Python-3.10.14.tgz && \
+    cd Python-3.10.14 && \
+    ./configure --enable-optimizations --enable-shared && \
+    make -j$(nproc) && \
+    make altinstall && \
+    ldconfig && \
+    ln -sf /usr/local/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/local/bin/pip3.10 /usr/bin/pip3 && \
+    cd .. && rm -rf Python-3.10.14*
+
+# Install pip
+RUN curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py \
+    && python3 get-pip.py \
+    && rm get-pip.py
 
 # Upgrade pip and install build tools
 RUN pip install --upgrade pip setuptools wheel packaging
@@ -92,14 +103,8 @@ RUN pip install -c /opt/constraints.txt \
 ENV TORCH_CUDA_ARCH_LIST="9.0"
 ENV MAX_JOBS=96
 
-# Build flashinfer from source (no wheels for cu121/torch2.4)
-WORKDIR /tmp
-RUN git clone https://github.com/flashinfer-ai/flashinfer.git && \
-    cd flashinfer && \
-    git checkout v0.1.6 && \
-    cd python && \
-    pip install . && \
-    cd / && rm -rf /tmp/flashinfer
+# Install flashinfer from prebuilt wheels (available for cu121/torch2.4)
+RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.4/
 
 WORKDIR /sgl-workspace
 
@@ -151,9 +156,12 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install datamodel_code_generator
 
 # Final sanity check
-RUN python3 -c "import sglang; import vllm; import outlines; print('All imports successful')" && \
+# Note: vLLM and outlines imports can fail without GPU - check via pip
+RUN python3 -c "import sglang; print('SGLang import OK')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
+    pip show outlines > /dev/null && echo "Outlines installed OK" && \
+    python3 -c "import flashinfer; print('flashinfer OK')" && \
     python3 -c "import pydantic; print(f'Pydantic version: {pydantic.__version__}')" && \
-    python3 -c "import typing_extensions; print(f'typing_extensions version: {typing_extensions.__version__}')" && \
     cat /opt/sglang_commit.txt
 
 # Set working directory

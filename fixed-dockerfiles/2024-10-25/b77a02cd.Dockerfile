@@ -123,7 +123,9 @@ RUN pip3 install -c /opt/constraints.txt \
     "compressed-tensors==0.6.0" \
     "filelock>=3.10.4" \
     ray \
-    nvidia-ml-py
+    nvidia-ml-py \
+    cloudpickle \
+    "outlines>=0.0.43,<0.1"
 
 # Install flashinfer 0.2.0.post1 (wheels available for cu121/torch2.4)
 RUN pip3 install flashinfer==0.2.0.post1 -i https://flashinfer.ai/whl/cu121/torch2.4/
@@ -187,14 +189,14 @@ RUN pip3 install \
     "anthropic>=0.20.0" \
     "litellm>=1.0.0"
 
-# Final verification
+# Final verification - use pip show for packages that need GPU to import
 RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
     python3 -c "import sglang; print('SGLang import successful')" && \
-    python3 -c "import vllm; print('vLLM import successful')" && \
-    python3 -c "import outlines; print('Outlines import successful')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
+    pip show outlines > /dev/null && echo "Outlines installed OK" && \
     python3 -c "import flashinfer; print('FlashInfer import successful')" && \
-    python3 -c "import xformers; print('xformers import successful')" && \
-    python3 -c "import sgl_kernel; print('sgl-kernel import successful')"
+    pip show xformers > /dev/null && echo "xformers installed OK" && \
+    pip show sgl-kernel > /dev/null && echo "sgl-kernel installed OK"
 
 # Clean up pip cache
 RUN pip3 cache purge

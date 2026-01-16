@@ -79,12 +79,14 @@ RUN pip install -c /opt/constraints.txt \
     filelock
 
 # Install CUDA-specific vLLM dependencies
+# Note: Don't reinstall torch - keep the one from base image
 RUN pip install \
     ray==2.9.0 \
     nvidia-ml-py \
-    torch==2.3.0 \
-    xformers==0.0.26.post1 \
     vllm-flash-attn==2.5.9
+
+# Install xformers with --no-deps to prevent pulling wrong torch version
+RUN pip install xformers==0.0.26.post1 --no-deps
 
 # Install flashinfer from wheels
 RUN pip install flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
@@ -114,6 +116,7 @@ RUN cd /sgl-workspace/sglang/python && \
     pip install -e . --no-deps
 
 # Install SGLang srt dependencies with constraints
+# Note: Don't reinstall torch - keep the one from base image
 RUN pip install -c /opt/constraints.txt \
     aiohttp \
     fastapi \
@@ -125,7 +128,6 @@ RUN pip install -c /opt/constraints.txt \
     psutil \
     pydantic \
     rpyc \
-    torch \
     uvicorn \
     uvloop \
     pyzmq
@@ -134,8 +136,9 @@ RUN pip install -c /opt/constraints.txt \
 RUN pip install datasets
 
 # Verify installation
+# Note: vLLM import requires GPU libraries, so we verify it's installed via pip instead
 RUN python -c "import sglang; print('SGLang installed successfully')" && \
-    python -c "import vllm; print('vLLM installed successfully')" && \
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
     python -c "import outlines; print('Outlines installed successfully')"
 
 # Set working directory

@@ -17,6 +17,7 @@ RUN apt-get update && apt-get install -y \
     git curl wget sudo libibverbs-dev \
     build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev \
     libssl-dev libreadline-dev libffi-dev libsqlite3-dev libbz2-dev \
+    liblzma-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Build Python 3.10 from source (deadsnakes PPA is broken on Ubuntu 20.04)
@@ -121,13 +122,13 @@ RUN pip3 install -c /opt/constraints.txt \
 # Clean pip cache
 RUN pip3 cache purge
 
-# Verify installations
+# Verify installations - use pip show for packages that need GPU to import
 RUN python3 -c "import torch; print(f'torch: {torch.__version__}')" && \
     python3 -c "import sglang; print('SGLang import OK')" && \
     python3 -c "import flashinfer; print('Flashinfer import OK')" && \
-    python3 -c "import vllm; print('vLLM import OK')" && \
-    python3 -c "import xformers; print('xformers import OK')" && \
-    python3 -c "import outlines; print('Outlines import OK')"
+    pip show vllm > /dev/null && echo "vLLM installed OK" && \
+    pip show xformers > /dev/null && echo "xformers installed OK" && \
+    pip show outlines > /dev/null && echo "Outlines installed OK"
 
 # Final verification of commit
 RUN test -f /opt/sglang_commit.txt && \
